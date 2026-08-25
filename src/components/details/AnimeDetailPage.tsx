@@ -8,6 +8,8 @@ import {
   Sparkles,
   Search,
   ArrowRight,
+  GitBranch,
+  Compass,
 } from 'lucide-react';
 import { useAnimeStore } from '../../store/useAnimeStore';
 import { usePlayerStore } from '../../store/usePlayerStore';
@@ -137,6 +139,16 @@ export const AnimeDetailPage: React.FC = () => {
   const charactersList = Array.isArray(anime.characters) ? anime.characters : [];
   const relationsList = Array.isArray(anime.relations) ? anime.relations : [];
 
+  // Group relations for Watch Order Tree
+  const prequels = relationsList.filter((r) => r.type === 'PREQUEL');
+  const sequels = relationsList.filter((r) => r.type === 'SEQUEL');
+  const sideStories = relationsList.filter(
+    (r) => r.type === 'SIDE_STORY' || r.type === 'SPIN_OFF' || r.type === 'SUMMARY'
+  );
+  const otherRelations = relationsList.filter(
+    (r) => r.type !== 'PREQUEL' && r.type !== 'SEQUEL' && r.type !== 'SIDE_STORY' && r.type !== 'SPIN_OFF' && r.type !== 'SUMMARY'
+  );
+
   const handleJumpToEpisode = (e: React.FormEvent) => {
     e.preventDefault();
     const target = parseInt(jumpInput.trim(), 10);
@@ -151,6 +163,23 @@ export const AnimeDetailPage: React.FC = () => {
   const handleBack = () => {
     setSelectedAnime(null);
     setActiveNavTab('home');
+  };
+
+  const navigateToRelation = (rel: AnimeRelation) => {
+    const targetAnime: any = {
+      id: rel.id,
+      malId: (rel as any).idMal || rel.id,
+      title: rel.title,
+      coverImage: rel.coverImage,
+      format: rel.format || 'TV',
+      status: rel.status || 'FINISHED',
+      episodes: (rel as any).episodes || 12,
+      genres: ['Animation'],
+      description: `Franchise ${rel.type || 'Media'}: ${
+        rel.title?.english || rel.title?.romaji || 'Anime'
+      }`,
+    };
+    setSelectedAnime(targetAnime);
   };
 
   return (
@@ -270,6 +299,18 @@ export const AnimeDetailPage: React.FC = () => {
           </button>
 
           <button
+            onClick={() => setActiveTab('relations')}
+            className={`flex items-center gap-2 px-5 py-3 rounded-t-xl text-xs sm:text-sm font-semibold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === 'relations'
+                ? 'border-crafted-brand-rust text-crafted-brand-rustLight bg-crafted-surface/80'
+                : 'border-transparent text-crafted-text-dim hover:text-white'
+            }`}
+          >
+            <GitBranch className="w-4 h-4" />
+            <span>Franchise Chronology & Watch Order ({relationsList.length})</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('characters')}
             className={`flex items-center gap-2 px-5 py-3 rounded-t-xl text-xs sm:text-sm font-semibold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
               activeTab === 'characters'
@@ -278,17 +319,6 @@ export const AnimeDetailPage: React.FC = () => {
             }`}
           >
             <span>Characters & Cast</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('relations')}
-            className={`flex items-center gap-2 px-5 py-3 rounded-t-xl text-xs sm:text-sm font-semibold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === 'relations'
-                ? 'border-crafted-brand-rust text-crafted-brand-rustLight bg-crafted-surface/80'
-                : 'border-transparent text-crafted-text-dim hover:text-white'
-            }`}
-          >
-            <span>Franchise Seasons & Relations ({relationsList.length})</span>
           </button>
 
           <button
@@ -364,7 +394,7 @@ export const AnimeDetailPage: React.FC = () => {
               </form>
             </div>
 
-            {/* Chunk Range Switcher for Long Anime (Bleach, JoJo, One Piece) */}
+            {/* Chunk Range Switcher for Long Anime */}
             {totalChunks > 1 && !episodeSearch && (
               <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
                 {Array.from({ length: totalChunks }).map((_, idx) => {
@@ -452,7 +482,190 @@ export const AnimeDetailPage: React.FC = () => {
           </div>
         )}
 
-        {/* TAB 2: CHARACTERS & SEIYUU */}
+        {/* TAB 2: FRANCHISE CHRONOLOGY & WATCH ORDER DIAGRAM */}
+        {activeTab === 'relations' && (
+          <div className="space-y-8">
+            <div className="space-y-1">
+              <h3 className="text-lg font-bold font-serif text-white flex items-center gap-2">
+                <Compass className="w-5 h-5 text-crafted-brand-rust" />
+                Franchise Chronology & Complete Watch Order
+              </h3>
+              <p className="text-xs text-crafted-text-dim">
+                Visual watch order tree organized by direct storyline continuity. Click any card to switch seasons and stream immediately.
+              </p>
+            </div>
+
+            {relationsList.length === 0 ? (
+              <div className="py-16 text-center space-y-2 bg-crafted-panel/40 rounded-2xl border border-crafted-border">
+                <p className="text-xs text-crafted-text-dim">Standalone anime with no prequels or sequels registered.</p>
+              </div>
+            ) : (
+              <div className="space-y-8">
+                {/* 1. Main Timeline Flow (Prequels -> Current -> Sequels) */}
+                <div className="space-y-4">
+                  <span className="text-xs font-mono font-bold uppercase tracking-wider text-crafted-brand-rustLight block">
+                    1. Main Storyline Progression
+                  </span>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+                    {/* Prequel Column */}
+                    <div className="space-y-3">
+                      <span className="text-[11px] font-mono text-crafted-text-dim">Prequel / Previous Season</span>
+                      {prequels.length === 0 ? (
+                        <div className="p-4 rounded-xl border border-dashed border-crafted-border text-center text-xs text-crafted-text-dim">
+                          Beginning of Storyline
+                        </div>
+                      ) : (
+                        prequels.map((rel) => (
+                          <div
+                            key={rel.id}
+                            onClick={() => navigateToRelation(rel)}
+                            className="p-3.5 rounded-2xl bg-crafted-panel/60 hover:bg-crafted-surface border border-crafted-border hover:border-crafted-brand-rust transition-all cursor-pointer space-y-2 group shadow-crafted-card"
+                          >
+                            <div className="flex items-center gap-3">
+                              <img
+                                src={rel.coverImage?.large || coverImg}
+                                alt=""
+                                referrerPolicy="no-referrer"
+                                className="w-12 aspect-[2/3] object-cover rounded-lg border border-crafted-border shrink-0"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 font-bold">
+                                  PREQUEL
+                                </span>
+                                <h4 className="text-xs font-bold text-white truncate group-hover:text-crafted-brand-rustLight transition-colors">
+                                  {rel.title?.english || rel.title?.romaji || 'Prequel'}
+                                </h4>
+                                <p className="text-[10px] text-crafted-text-dim font-mono">{rel.format || 'TV'}</p>
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Current Season Column */}
+                    <div className="p-4 rounded-2xl bg-crafted-brand-rust/10 border-2 border-crafted-brand-rust text-center space-y-2 shadow-crafted-glow">
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-crafted-brand-rust text-white font-bold inline-block">
+                        CURRENTLY VIEWING
+                      </span>
+                      <h4 className="text-sm font-bold text-white line-clamp-1">{titleString}</h4>
+                      <p className="text-[11px] text-crafted-text-dim font-mono">
+                        {anime.format || 'TV'} • {episodes.length} Episodes
+                      </p>
+                    </div>
+
+                    {/* Sequel Column */}
+                    <div className="space-y-3">
+                      <span className="text-[11px] font-mono text-crafted-text-dim">Sequel / Next Season</span>
+                      {sequels.length === 0 ? (
+                        <div className="p-4 rounded-xl border border-dashed border-crafted-border text-center text-xs text-crafted-text-dim">
+                          Latest Season / No Sequel Yet
+                        </div>
+                      ) : (
+                        sequels.map((rel) => (
+                          <div
+                            key={rel.id}
+                            onClick={() => navigateToRelation(rel)}
+                            className="p-3.5 rounded-2xl bg-crafted-panel/60 hover:bg-crafted-surface border border-crafted-border hover:border-crafted-brand-rust transition-all cursor-pointer space-y-2 group shadow-crafted-card"
+                          >
+                            <div className="flex items-center gap-3">
+                              <img
+                                src={rel.coverImage?.large || coverImg}
+                                alt=""
+                                referrerPolicy="no-referrer"
+                                className="w-12 aspect-[2/3] object-cover rounded-lg border border-crafted-border shrink-0"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">
+                                  DIRECT SEQUEL
+                                </span>
+                                <h4 className="text-xs font-bold text-white truncate group-hover:text-crafted-brand-rustLight transition-colors">
+                                  {rel.title?.english || rel.title?.romaji || 'Sequel'}
+                                </h4>
+                                <p className="text-[10px] text-crafted-text-dim font-mono">{rel.format || 'TV'}</p>
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Side Stories & Movies */}
+                {sideStories.length > 0 && (
+                  <div className="space-y-3">
+                    <span className="text-xs font-mono font-bold uppercase tracking-wider text-crafted-brand-lightViolet block">
+                      2. Side Stories, OVAs & Recap Summaries
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                      {sideStories.map((rel) => (
+                        <div
+                          key={rel.id}
+                          onClick={() => navigateToRelation(rel)}
+                          className="flex items-center gap-3 p-3 rounded-2xl bg-crafted-panel/50 hover:bg-crafted-surface border border-crafted-border hover:border-crafted-brand-violet transition-all cursor-pointer group shadow-crafted-card"
+                        >
+                          <img
+                            src={rel.coverImage?.large || coverImg}
+                            alt=""
+                            referrerPolicy="no-referrer"
+                            className="w-12 aspect-[2/3] object-cover rounded-lg border border-crafted-border shrink-0"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-crafted-brand-violet/20 text-crafted-brand-lightViolet font-bold">
+                              {rel.type ? rel.type.replace(/_/g, ' ') : 'SIDE STORY'}
+                            </span>
+                            <h4 className="text-xs font-bold text-white truncate group-hover:text-crafted-brand-lightViolet transition-colors">
+                              {rel.title?.english || rel.title?.romaji || 'Anime'}
+                            </h4>
+                            <p className="text-[10px] text-crafted-text-dim font-mono">{rel.format || 'OVA'}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. Alternative Adaptations & Spin-offs */}
+                {otherRelations.length > 0 && (
+                  <div className="space-y-3">
+                    <span className="text-xs font-mono font-bold uppercase tracking-wider text-crafted-text-dim block">
+                      3. Alternative Adaptations & Spin-offs
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                      {otherRelations.map((rel) => (
+                        <div
+                          key={rel.id}
+                          onClick={() => navigateToRelation(rel)}
+                          className="flex items-center gap-3 p-3 rounded-2xl bg-crafted-panel/50 hover:bg-crafted-surface border border-crafted-border hover:border-crafted-border-bright transition-all cursor-pointer group shadow-crafted-card"
+                        >
+                          <img
+                            src={rel.coverImage?.large || coverImg}
+                            alt=""
+                            referrerPolicy="no-referrer"
+                            className="w-12 aspect-[2/3] object-cover rounded-lg border border-crafted-border shrink-0"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-crafted-text-muted font-bold">
+                              {rel.type ? rel.type.replace(/_/g, ' ') : 'FRANCHISE'}
+                            </span>
+                            <h4 className="text-xs font-bold text-white truncate group-hover:text-crafted-brand-rustLight transition-colors">
+                              {rel.title?.english || rel.title?.romaji || 'Anime'}
+                            </h4>
+                            <p className="text-[10px] text-crafted-text-dim font-mono">{rel.format || 'OTHER'}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 3: CHARACTERS & SEIYUU */}
         {activeTab === 'characters' && (
           <div className="space-y-4">
             <h3 className="text-base font-bold font-serif text-white">Main Characters & Cast</h3>
@@ -486,73 +699,6 @@ export const AnimeDetailPage: React.FC = () => {
                     </div>
                   </div>
                 ))
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 3: RELATIONS (Fully Clickable Franchise Seasons) */}
-        {activeTab === 'relations' && (
-          <div className="space-y-4">
-            <h3 className="text-base font-bold font-serif text-white">Franchise Seasons & Sequel Tree</h3>
-            <p className="text-xs text-crafted-text-dim">Click any sequel, prequel, or side story below to switch seasons and watch instantly.</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {relationsList.length === 0 ? (
-                <p className="text-xs text-crafted-text-dim col-span-2">
-                  Standalone anime or no prequels/sequels registered.
-                </p>
-              ) : (
-                relationsList.map((rel: AnimeRelation) => {
-                  const relTitle =
-                    typeof rel.title === 'object'
-                      ? rel.title?.english || rel.title?.romaji || rel.title?.userPreferred || 'Related Anime'
-                      : String(rel.title || 'Related Anime');
-
-                  return (
-                    <div
-                      key={rel.id}
-                      onClick={() => {
-                        const targetAnime: any = {
-                          id: rel.id,
-                          malId: (rel as any).idMal,
-                          title: rel.title,
-                          coverImage: rel.coverImage,
-                          format: rel.format || 'TV',
-                          status: rel.status || 'FINISHED',
-                          episodes: (rel as any).episodes || 12,
-                          genres: ['Animation'],
-                          description: `Franchise ${rel.type || 'Media'}: ${relTitle}`,
-                        };
-                        setSelectedAnime(targetAnime);
-                      }}
-                      className="flex items-center justify-between gap-4 p-4 rounded-2xl bg-crafted-panel/50 hover:bg-crafted-surface border border-crafted-border hover:border-crafted-brand-rust transition-all group cursor-pointer shadow-crafted-card"
-                    >
-                      <div className="flex items-center gap-3.5 min-w-0">
-                        <img
-                          src={rel.coverImage?.large || coverImg}
-                          alt=""
-                          referrerPolicy="no-referrer"
-                          className="w-14 aspect-[2/3] object-cover rounded-xl border border-crafted-border group-hover:scale-105 transition-transform shrink-0"
-                        />
-                        <div className="flex-1 min-w-0 space-y-1">
-                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-crafted-brand-rust/20 text-crafted-brand-rustLight font-bold">
-                            {rel.type ? rel.type.replace(/_/g, ' ') : 'SEQUEL / PREQUEL'}
-                          </span>
-                          <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-crafted-brand-rustLight transition-colors">
-                            {relTitle}
-                          </h4>
-                          <p className="text-xs text-crafted-text-dim">
-                            {rel.format || 'TV'} • {rel.status || 'FINISHED'}
-                          </p>
-                        </div>
-                      </div>
-
-                      <button className="px-3.5 py-1.5 rounded-xl bg-crafted-surface group-hover:bg-crafted-brand-rust text-crafted-text group-hover:text-white border border-crafted-border text-xs font-bold transition-all shrink-0">
-                        <Play className="w-3.5 h-3.5 fill-current" />
-                      </button>
-                    </div>
-                  );
-                })
               )}
             </div>
           </div>
