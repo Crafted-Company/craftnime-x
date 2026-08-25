@@ -11,7 +11,7 @@ function createWindow() {
     height: 920,
     minWidth: 960,
     minHeight: 600,
-    title: 'Craftnime — Next-Gen Anime Streaming',
+    title: 'Craftnime',
     backgroundColor: '#1B1515',
     icon: path.join(__dirname, '../public/Craftnime.png'),
     webPreferences: {
@@ -59,21 +59,19 @@ function createWindow() {
 
   const distPath = path.join(__dirname, '../dist/index.html');
 
-  const loadApp = () => {
+  // If running in development with live server
+  if (process.env.VITE_DEV) {
     mainWindow.loadURL('http://localhost:5173').catch(() => {
-      mainWindow.loadURL('http://localhost:5174').catch(() => {
-        if (fs.existsSync(distPath)) {
-          mainWindow.loadFile(distPath);
-        }
-      });
+      mainWindow.loadFile(distPath);
     });
-  };
-
-  loadApp();
-
-  mainWindow.webContents.on('did-fail-load', () => {
-    setTimeout(() => loadApp(), 1000);
-  });
+  } else {
+    // Packaged AppImage / Binary mode - load local static production assets directly
+    if (fs.existsSync(distPath)) {
+      mainWindow.loadFile(distPath);
+    } else {
+      mainWindow.loadURL('http://localhost:5173');
+    }
+  }
 
   mainWindow.on('closed', () => {
     mainWindow = null;

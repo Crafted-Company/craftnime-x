@@ -10,8 +10,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "electron:dev": "concurrently -k \"vite --port 5173 --strictPort\" \"wait-on tcp:5173 && electron electron/main.cjs\"",
-    "dist:linux": "pnpm build && electron-builder --linux AppImage deb",
+    "electron:dev": "concurrently -k \"vite --port 5173 --strictPort\" \"wait-on tcp:5173 && cross-env VITE_DEV=1 electron electron/main.cjs\"",
+    "dist:linux": "pnpm build && electron-builder --linux AppImage",
     "dist:win": "pnpm build && electron-builder --win nsis",
     "dist:all": "pnpm build && electron-builder --linux --win",
     "cap:sync": "pnpm build && npx cap sync android",
@@ -61,8 +61,7 @@
     ],
     "linux": {
       "target": [
-        "AppImage",
-        "deb"
+        "AppImage"
       ],
       "category": "AudioVideo",
       "icon": "public/Craftnime.png"
@@ -73,12 +72,6 @@
         "portable"
       ],
       "icon": "public/Craftnime.png"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
     }
   }
 }
