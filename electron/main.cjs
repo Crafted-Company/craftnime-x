@@ -5,6 +5,22 @@ const { exec } = require('child_process');
 
 let mainWindow = null;
 
+function getExecutableScriptPath() {
+  const tmpPath = path.join(app.getPath('temp'), 'craftnime_get_stream.sh');
+  const sourcePath = path.join(__dirname, 'get_stream.sh');
+
+  try {
+    if (fs.existsSync(sourcePath)) {
+      const content = fs.readFileSync(sourcePath, 'utf8');
+      fs.writeFileSync(tmpPath, content, { mode: 0o755 });
+      return tmpPath;
+    }
+  } catch (err) {
+    console.warn('Failed to extract get_stream.sh to tmp', err);
+  }
+  return sourcePath;
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -59,13 +75,11 @@ function createWindow() {
 
   const distPath = path.join(__dirname, '../dist/index.html');
 
-  // If running in development with live server
   if (process.env.VITE_DEV) {
     mainWindow.loadURL('http://localhost:5173').catch(() => {
       mainWindow.loadFile(distPath);
     });
   } else {
-    // Packaged AppImage / Binary mode - load local static production assets directly
     if (fs.existsSync(distPath)) {
       mainWindow.loadFile(distPath);
     } else {
@@ -78,10 +92,10 @@ function createWindow() {
   });
 }
 
-// IPC Handler to resolve live anime stream using get_stream.sh
+// IPC Handler to resolve live anime stream
 ipcMain.handle('resolve-anime-stream', async (event, { title, episodeNumber, audioLanguage }) => {
   return new Promise((resolve) => {
-    const scriptPath = path.join(__dirname, 'get_stream.sh');
+    const scriptPath = getExecutableScriptPath();
     const lang = audioLanguage === 'dub' ? 'eng' : 'jpn';
     const cleanTitle = (title || '').replace(/['"]/g, '');
     const ep = parseInt(episodeNumber, 10) || 1;
