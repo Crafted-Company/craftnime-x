@@ -187,6 +187,7 @@ const GRAPHQL_DETAIL_FIELDS = `
       relationType
       node {
         id
+        idMal
         title {
           romaji
           english
@@ -194,8 +195,11 @@ const GRAPHQL_DETAIL_FIELDS = `
         }
         format
         status
+        episodes
+        bannerImage
         coverImage {
           large
+          extraLarge
         }
       }
     }
@@ -410,10 +414,10 @@ export class AniListService {
   }
 
   static generateEpisodes(anime: AnimeItem): AnimeEpisode[] {
-    const total = anime.episodes || (anime.nextAiringEpisode ? anime.nextAiringEpisode.episode - 1 : 12);
-    const count = Math.max(1, Math.min(total, 64));
+    const total = anime.episodes || (anime.nextAiringEpisode ? anime.nextAiringEpisode.episode - 1 : 24);
+    const count = Math.max(1, total);
     const episodes: AnimeEpisode[] = [];
-    const streaming = anime.streamingEpisodes || [];
+    const streaming = Array.isArray(anime.streamingEpisodes) ? anime.streamingEpisodes : [];
 
     const defaultCover =
       anime.bannerImage ||
@@ -425,17 +429,21 @@ export class AniListService {
     const animeTitleStr =
       typeof anime.title === 'object'
         ? anime.title?.english || anime.title?.romaji || anime.title?.userPreferred || 'Anime'
-        : anime.title || 'Anime';
+        : String(anime.title || 'Anime');
 
     for (let i = 1; i <= count; i++) {
-      // Find matching streaming episode thumbnail
       const streamMatch =
         streaming[i - 1] ||
-        streaming.find((s) => s.title?.toLowerCase().includes(`episode ${i}`) || s.title?.toLowerCase().includes(`ep ${i}`));
+        streaming.find(
+          (s) =>
+            s &&
+            typeof s.title === 'string' &&
+            (s.title.toLowerCase().includes(`episode ${i}`) || s.title.toLowerCase().includes(`ep ${i}`))
+        );
 
       const thumb = streamMatch?.thumbnail || defaultCover;
       const realTitle = streamMatch?.title
-        ? streamMatch.title.replace(/^Episode \d+ - /, '')
+        ? String(streamMatch.title).replace(/^Episode \d+ - /, '')
         : this.getEpisodeTitleSnippet(i);
 
       episodes.push({
@@ -447,7 +455,7 @@ export class AniListService {
         hasDub: true,
         hasSub: true,
         isFiller: i % 12 === 0,
-        airDate: `2024-${String((i % 12) + 1).padStart(2, '0')}-15`,
+        airDate: `Episode ${i}`,
         description: `Official broadcast Episode ${i} of ${animeTitleStr}. Stream in 1080p high definition.`,
       });
     }
