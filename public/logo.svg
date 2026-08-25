@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="craftGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6864F6" />
+      <stop offset="50%" stop-color="#A9452D" />
+      <stop offset="100%" stop-color="#433FA9" />
+    </linearGradient>
+    <linearGradient id="bladeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F3EFEF" />
+      <stop offset="100%" stop-color="#A19898" />
+    </linearGradient>
+  </defs>
+  <!-- Background Hex/Shield -->
+  <rect x="4" y="4" width="56" height="56" rx="16" fill="#241E1E" stroke="#312929" stroke-width="2" />
+  <!-- Stylized C + Nime Play Blade -->
+  <path d="M20 18C14 24 14 40 20 46C26 52 38 52 44 46" stroke="url(#craftGrad)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Play Triangle / Katana Slash -->
+  <polygon points="28,24 44,32 28,40" fill="url(#craftGrad)" stroke="#1B1515" stroke-width="1.5" />
+  <!-- Sparkle Accent -->
+  <circle cx="46" cy="18" r="3" fill="#6864F6" />
+</svg>

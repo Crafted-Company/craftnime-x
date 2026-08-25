@@ -1,0 +1,93 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    border-color: #312929;
+  }
+  
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background-color: #1B1515;
+    color: #F3EFEF;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  /* Custom High-Legibility Scrollbars */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #1B1515;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #312929;
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #A9452D;
+  }
+}
+
+/* Glassmorphism Surface Utility */
+.glass-panel {
+  background: rgba(36, 30, 30, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(49, 41, 41, 0.8);
+}
+
+.glass-nav {
+  background: rgba(27, 21, 21, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(49, 41, 41, 0.6);
+}
+
+.text-editorial {
+  font-family: 'Instrument Serif', Georgia, serif;
+}
+
+.text-mono-meta {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Horizontal Hide Scrollbars for Carousels */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Crafted Co. Glow Effects */
+.glow-rust {
+  box-shadow: 0 0 35px -5px rgba(169, 69, 45, 0.35);
+}
+
+.glow-violet {
+  box-shadow: 0 0 35px -5px rgba(104, 100, 246, 0.35);
+}
+
+/* Hero Vignette Gradients */
+.hero-vignette-bottom {
+  background: linear-gradient(to top, #1B1515 0%, rgba(27, 21, 21, 0.8) 40%, rgba(27, 21, 21, 0) 100%);
+}
+
+.hero-vignette-left {
+  background: linear-gradient(to right, #1B1515 0%, rgba(27, 21, 21, 0.92) 30%, rgba(27, 21, 21, 0.4) 70%, rgba(27, 21, 21, 0) 100%);
+}
+
+.hero-vignette-top {
+  background: linear-gradient(to bottom, rgba(27, 21, 21, 0.9) 0%, rgba(27, 21, 21, 0) 100%);
+}
