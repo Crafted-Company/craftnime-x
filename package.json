@@ -2,7 +2,7 @@
   "name": "craftnime",
   "version": "1.0.0",
   "description": "Craftnime — Next-Gen Anime Streaming & MyAnimeList Hub",
-  "author": "Aditya",
+  "author": "Aditya <aditya@users.noreply.github.com>",
   "private": true,
   "type": "module",
   "main": "electron/main.cjs",

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Craftnime</string>
+    <string name="title_activity_main">Craftnime</string>
+    <string name="package_name">com.craftnime.app</string>
+    <string name="custom_url_scheme">com.craftnime.app</string>
+</resources>
