@@ -3,13 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { exec } = require('child_process');
 
-// High-DPI & Crisp Subpixel Text Rendering for Linux Wayland & X11
-app.commandLine.appendSwitch('high-dpi-support', '1');
-app.commandLine.appendSwitch('force-device-scale-factor', '1');
-app.commandLine.appendSwitch('ignore-certificate-errors');
-app.commandLine.appendSwitch('disable-site-isolation-trials');
-
-let mainWindow;
+let mainWindow = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -27,7 +21,7 @@ function createWindow() {
       allowRunningInsecureContent: true,
     },
     autoHideMenuBar: true,
-    show: false,
+    show: true,
   });
 
   // Inject required Referer & Origin headers for HLS streaming servers
@@ -81,10 +75,6 @@ function createWindow() {
     setTimeout(() => loadApp(), 1000);
   });
 
-  mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
-  });
-
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -115,43 +105,6 @@ ipcMain.handle('resolve-anime-stream', async (event, { title, episodeNumber, aud
         streamUrl: streamUrl || null,
         embedUrl: embedUrl || null,
       });
-    });
-  });
-});
-
-// IPC Handler for AniList OAuth Login
-ipcMain.handle('open-anilist-oauth', async () => {
-  return new Promise((resolve) => {
-    const authWindow = new BrowserWindow({
-      width: 800,
-      height: 700,
-      parent: mainWindow,
-      modal: true,
-      title: 'Sign In with AniList',
-      backgroundColor: '#1B1515',
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
-      },
-    });
-
-    const authUrl = 'https://anilist.co/api/v2/oauth/authorize?client_id=27521&response_type=token';
-    authWindow.loadURL(authUrl);
-
-    authWindow.webContents.on('will-redirect', (event, url) => {
-      if (url.includes('#access_token=')) {
-        const hash = url.split('#')[1];
-        const params = new URLSearchParams(hash);
-        const token = params.get('access_token');
-        if (token) {
-          authWindow.close();
-          resolve({ success: true, token });
-        }
-      }
-    });
-
-    authWindow.on('closed', () => {
-      resolve({ success: false, token: null });
     });
   });
 });
