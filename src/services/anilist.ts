@@ -352,7 +352,7 @@ export class AniListService {
     return list;
   }
 
-  static async getAnimeDetails(id: number): Promise<AnimeItem | null> {
+  static async getAnimeDetails(id: number, fallbackAnime?: AnimeItem | null): Promise<AnimeItem | null> {
     const query = `
       query ($id: Int) {
         Media(id: $id, type: ANIME) {
@@ -413,7 +413,9 @@ export class AniListService {
     } catch (e) {
       console.warn(`Failed to fetch details for anime id ${id}`, e);
     }
-    const matched = MASTER_CURATED_CATALOG.find((a) => a.id === id || a.malId === id);
+
+    // 2. Strict ID match in Curated Catalog
+    const matched = MASTER_CURATED_CATALOG.find((a) => a.id === id || (a.malId && a.malId === id));
     if (matched) {
       if (!matched.relations || matched.relations.length === 0) {
         const title = matched.title?.english || matched.title?.romaji || '';
@@ -427,22 +429,19 @@ export class AniListService {
       return matched;
     }
 
-    try {
-      const kitsuDetails = await KitsuService.getTrending(30);
-      const kMatch = kitsuDetails.find((a) => a.id === id);
-      if (kMatch) {
-        const title = kMatch.title?.english || kMatch.title?.romaji || '';
-        try {
-          const rels = await KitsuService.getRelationsForAnime(title);
-          if (rels && rels.length > 0) {
-            return { ...kMatch, relations: rels };
-          }
-        } catch {}
-        return kMatch;
-      }
-    } catch (e) {}
+    // 3. If fallbackAnime provided, enrich with Kitsu franchise relations
+    if (fallbackAnime) {
+      const title = fallbackAnime.title?.english || fallbackAnime.title?.romaji || '';
+      try {
+        const kitsuRels = await KitsuService.getRelationsForAnime(title);
+        if (kitsuRels && kitsuRels.length > 0) {
+          return { ...fallbackAnime, relations: kitsuRels };
+        }
+      } catch {}
+      return fallbackAnime;
+    }
 
-    return MASTER_CURATED_CATALOG[0] || null;
+    return null;
   }
 
   static async search(searchQuery: string, genre?: string, perPage = 20): Promise<AnimeItem[]> {

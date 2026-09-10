@@ -143,8 +143,14 @@ export const useAnimeStore = create<AnimeState>((set, get) => ({
     });
 
     try {
-      const fullDetails = await AniListService.getAnimeDetails(anime.id);
-      if (fullDetails) {
+      const fullDetails = await AniListService.getAnimeDetails(anime.id, anime);
+      if (
+        fullDetails &&
+        (fullDetails.id === anime.id ||
+          fullDetails.malId === anime.malId ||
+          fullDetails.title?.english === anime.title?.english ||
+          fullDetails.title?.romaji === anime.title?.romaji)
+      ) {
         set({ detailedAnimeInfo: fullDetails });
       }
     } catch (e) {
