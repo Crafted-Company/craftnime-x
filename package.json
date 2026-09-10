@@ -2,7 +2,7 @@
   "name": "craftnime",
   "version": "1.0.0",
   "description": "Craftnime — Next-Gen Anime Streaming & MyAnimeList Hub",
-  "author": "Aditya <aditya@users.noreply.github.com>",
+  "author": "Aditya0973 <adityakumar4727@gmail.com>",
   "private": true,
   "type": "module",
   "main": "electron/main.cjs",
@@ -55,7 +55,7 @@
   "build": {
     "appId": "com.craftnime.app",
     "productName": "Craftnime",
-    "copyright": "Copyright © 2026 Aditya",
+    "copyright": "Copyright © 2026 Aditya0973",
     "directories": {
       "output": "release"
     },
