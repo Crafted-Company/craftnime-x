@@ -3,9 +3,12 @@
   "appName": "Craftnime",
   "webDir": "dist",
   "server": {
-    "androidScheme": "https"
+    "androidScheme": "https",
+    "cleartext": true
   },
   "android": {
-    "allowMixedContent": true
+    "allowMixedContent": true,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": true
   }
 }

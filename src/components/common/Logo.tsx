@@ -21,14 +21,14 @@ export const Logo: React.FC<LogoProps> = ({ size = 'md', className = '' }) => {
 
   return (
     <div className={`flex items-center gap-3 cursor-pointer select-none group ${className}`}>
-      {/* Official Crafted Co. Brand Logo */}
+      {/* Official Crafted Co. Brand Logo with no bottom glow */}
       <img
         src={logoImg}
         alt="Craftnime Logo"
-        className={`${iconSizes[size]} object-contain rounded-xl shadow-crafted-glow transition-transform group-hover:scale-105 shrink-0`}
+        className={`${iconSizes[size]} object-contain rounded-xl transition-transform group-hover:scale-105 shrink-0`}
       />
 
-      {/* Brand Title */}
+      {/* Brand Title with clean, crisp typography and no glow */}
       <span className={`${textSizes[size]} font-bold tracking-tight text-white flex items-center`}>
         Craft<span className="text-crafted-brand-rustLight font-bold">nime</span>
       </span>

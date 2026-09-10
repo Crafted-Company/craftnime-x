@@ -5,11 +5,16 @@ import { HeroBillboard } from './components/hero/HeroBillboard';
 import { AnimeCarousel } from './components/carousel/AnimeCarousel';
 import { AnimeDetailPage } from './components/details/AnimeDetailPage';
 import { VideoPlayerModal } from './components/player/VideoPlayerModal';
+import { StreamSelectModal } from './components/player/StreamSelectModal';
 import { SearchModal } from './components/common/SearchModal';
 import { MALLoginModal } from './components/modal/MALLoginModal';
+import { SettingsModal } from './components/settings/SettingsModal';
 import { MALWatchlistHub } from './components/mal/MALWatchlistHub';
 import { AnimeCard } from './components/carousel/AnimeCard';
 import { useAnimeStore } from './store/useAnimeStore';
+import { useMALStore } from './store/useMALStore';
+import { useWatchedStore } from './store/useWatchedStore';
+import { usePlayerStore } from './store/usePlayerStore';
 import {
   Flame,
   Clock,
@@ -26,6 +31,7 @@ export const App: React.FC = () => {
   const {
     activeNavTab,
     fetchInitialCatalog,
+    newEpisodesList,
     trendingList,
     topAiringList,
     popularSeasonList,
@@ -46,8 +52,18 @@ export const App: React.FC = () => {
     isLoading,
   } = useAnimeStore();
 
+  const { user, loginMAL, syncedCompletedList, syncedWatchingList } = useMALStore();
+  const { syncFromMALList } = useWatchedStore();
+
   useEffect(() => {
     fetchInitialCatalog();
+
+    // Auto-refresh MAL list and watched sync on launch if logged in
+    if (user?.isLoggedIn && user?.username) {
+      loginMAL(user.username);
+    } else if (syncedCompletedList.length > 0 || syncedWatchingList.length > 0) {
+      syncFromMALList(syncedCompletedList, syncedWatchingList);
+    }
   }, []);
 
   const genres = [
@@ -65,7 +81,7 @@ export const App: React.FC = () => {
   ];
 
   const seasons = ['WINTER', 'SPRING', 'SUMMER', 'FALL'];
-  const years = [2025, 2024, 2023, 2022];
+  const years = [2026, 2025, 2024, 2023, 2022, 2021, 2020];
   const formats = ['ALL', 'TV', 'MOVIE', 'OVA', 'SPECIAL'];
 
   return (
@@ -94,6 +110,18 @@ export const App: React.FC = () => {
                   icon={<Clock className="w-5 h-5 text-crafted-brand-rust" />}
                   items={continueWatchingList}
                   variant="continue"
+                />
+              )}
+
+              {/* New Episodes */}
+              {newEpisodesList.length > 0 && (
+                <AnimeCarousel
+                  title="New Episodes"
+                  subtitle="Latest broadcast anime episodes just released"
+                  icon={<Sparkles className="w-5 h-5 text-crafted-brand-rust" />}
+                  badge="NEW"
+                  items={newEpisodesList}
+                  variant="standard"
                 />
               )}
 
@@ -138,195 +166,199 @@ export const App: React.FC = () => {
                   <Flame className="w-8 h-8 text-crafted-brand-rust" />
                   Trending Anime
                 </h1>
-                <p className="text-xs text-crafted-text-dim">
-                  Real-time broadcast chart updated live via AniList GraphQL V2
+                <p className="text-xs sm:text-sm text-crafted-text-dim">
+                  Real-time global popularity rankings updated every hour
                 </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
               {trendingList.map((anime) => (
-                <AnimeCard key={anime.id} anime={anime} isGrid={true} />
+                <AnimeCard key={anime.id} anime={anime} isGrid />
               ))}
             </div>
           </div>
         )}
 
-        {/* Seasonal Tab View */}
+        {/* Seasonal Anime Tab */}
         {activeNavTab === 'seasonal' && (
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 pb-20">
-            <div className="space-y-6">
-              <div className="flex items-center justify-between pb-4 border-b border-crafted-border flex-wrap gap-4">
-                <div className="space-y-1">
-                  <h1 className="text-3xl sm:text-4xl font-bold font-serif text-white flex items-center gap-3">
-                    <Calendar className="w-8 h-8 text-crafted-brand-lightViolet" />
-                    Seasonal Anime Schedule
-                  </h1>
-                  <p className="text-xs text-crafted-text-dim">
-                    Showing {selectedSeason} {selectedSeasonYear} broadcast charts
-                  </p>
-                </div>
-
-                {/* Season & Year Switcher */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  <div className="flex items-center p-1 rounded-xl bg-crafted-surface border border-crafted-border">
-                    {seasons.map((season) => (
-                      <button
-                        key={season}
-                        onClick={() => setSelectedSeason(season, selectedSeasonYear)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all ${
-                          selectedSeason === season
-                            ? 'bg-crafted-brand-rust text-white shadow-crafted-glow'
-                            : 'text-crafted-text-dim hover:text-white'
-                        }`}
-                      >
-                        {season}
-                      </button>
-                    ))}
-                  </div>
-
-                  <select
-                    value={selectedSeasonYear}
-                    onChange={(e) => setSelectedSeason(selectedSeason, Number(e.target.value))}
-                    className="px-3 py-1.5 rounded-xl bg-crafted-surface border border-crafted-border text-crafted-text text-xs font-mono focus:outline-none cursor-pointer"
-                  >
-                    {years.map((yr) => (
-                      <option key={yr} value={yr}>
-                        {yr}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Grid */}
-              {isLoading ? (
-                <div className="py-20 text-center space-y-3">
-                  <div className="w-8 h-8 border-2 border-crafted-brand-rust border-t-transparent rounded-full animate-spin mx-auto" />
-                  <p className="text-xs font-mono text-crafted-text-dim">Loading seasonal anime...</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
-                  {popularSeasonList.map((anime) => (
-                    <AnimeCard key={anime.id} anime={anime} isGrid={true} />
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Browse Tab View */}
-        {activeNavTab === 'browse' && (
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 pb-20">
-            <div className="space-y-6">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 pb-20 space-y-8">
+            <div className="flex items-center justify-between flex-wrap gap-4 pb-4 border-b border-crafted-border">
               <div className="space-y-1">
                 <h1 className="text-3xl sm:text-4xl font-bold font-serif text-white flex items-center gap-3">
-                  <Layers className="w-8 h-8 text-crafted-brand-rust" />
-                  Browse Anime Catalog
+                  <Calendar className="w-8 h-8 text-crafted-brand-lightViolet" />
+                  Seasonal Anime
                 </h1>
-                <p className="text-xs text-crafted-text-dim">
-                  Multi-filter discovery across genres, format, and popularity ranking
+                <p className="text-xs sm:text-sm text-crafted-text-dim">
+                  Explore premiere broadcasts by season and broadcast year
                 </p>
               </div>
 
-              {/* Search & Filter Bar */}
-              <div className="flex items-center gap-3 flex-wrap bg-crafted-panel/60 p-4 rounded-2xl border border-crafted-border">
-                <div className="relative flex-1 min-w-[240px]">
-                  <Search className="w-4 h-4 text-crafted-brand-rust absolute left-3 top-1/2 -translate-y-1/2" />
+              {/* Season / Year Filter Selectors */}
+              <div className="flex items-center gap-3">
+                <select
+                  value={selectedSeason}
+                  onChange={(e) => setSelectedSeason(e.target.value, selectedSeasonYear)}
+                  className="bg-crafted-surface text-crafted-text text-xs font-mono px-3 py-2 rounded-xl border border-crafted-border focus:outline-none cursor-pointer"
+                >
+                  {seasons.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={selectedSeasonYear}
+                  onChange={(e) => setSelectedSeason(selectedSeason, parseInt(e.target.value, 10))}
+                  className="bg-crafted-surface text-crafted-text text-xs font-mono px-3 py-2 rounded-xl border border-crafted-border focus:outline-none cursor-pointer"
+                >
+                  {years.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
+              {popularSeasonList.map((anime) => (
+                <AnimeCard key={anime.id} anime={anime} isGrid />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Browse & Filter Catalog Tab */}
+        {activeNavTab === 'browse' && (
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 pb-20 space-y-8">
+            <div className="flex items-center justify-between flex-wrap gap-4 pb-4 border-b border-crafted-border">
+              <div className="space-y-1">
+                <h1 className="text-3xl sm:text-4xl font-bold font-serif text-white flex items-center gap-3">
+                  <Layers className="w-8 h-8 text-crafted-brand-rust" />
+                  Explore Catalog
+                </h1>
+                <p className="text-xs sm:text-sm text-crafted-text-dim">
+                  Filter across 10,000+ anime titles by format, genre, and score
+                </p>
+              </div>
+            </div>
+
+            {/* Filter Bar Controls */}
+            <div className="bg-crafted-surface p-4 sm:p-5 rounded-2xl border border-crafted-border space-y-4 shadow-crafted-card">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Search Term */}
+                <div className="relative">
+                  <Search className="w-4 h-4 text-crafted-brand-rust absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
                     value={searchQuery}
-                    onChange={(e) => {
-                      setSearchQuery(e.target.value);
-                      applyBrowseFilters();
-                    }}
-                    placeholder="Search by title, keywords..."
-                    className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-crafted-bg border border-crafted-border text-crafted-text placeholder:text-crafted-text-dim focus:outline-none focus:border-crafted-brand-rust"
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && applyBrowseFilters()}
+                    placeholder="Search by title..."
+                    className="w-full pl-10 pr-4 py-2 text-xs rounded-xl bg-crafted-bg border border-crafted-border text-crafted-text placeholder:text-crafted-text-dim focus:outline-none focus:border-crafted-brand-rust"
                   />
                 </div>
 
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-mono text-crafted-text-dim hidden sm:inline">Format:</span>
+                {/* Genre Selector */}
+                <div className="flex items-center gap-2">
+                  <Filter className="w-4 h-4 text-crafted-brand-rust shrink-0" />
                   <select
-                    value={selectedFormat}
-                    onChange={(e) => setSelectedFormat(e.target.value)}
-                    className="px-3 py-2 rounded-xl bg-crafted-bg border border-crafted-border text-crafted-text text-xs font-mono focus:outline-none cursor-pointer"
+                    value={selectedGenre}
+                    onChange={(e) => setSelectedGenre(e.target.value)}
+                    className="w-full bg-crafted-bg text-crafted-text text-xs px-3 py-2 rounded-xl border border-crafted-border focus:outline-none cursor-pointer"
                   >
-                    {formats.map((f) => (
-                      <option key={f} value={f}>
-                        {f}
+                    {genres.map((g) => (
+                      <option key={g} value={g}>
+                        {g === 'All' ? 'All Genres' : g}
                       </option>
                     ))}
                   </select>
                 </div>
 
-                <div className="flex items-center gap-1.5">
-                  <ArrowUpDown className="w-3.5 h-3.5 text-crafted-brand-lightViolet" />
+                {/* Format Selector */}
+                <div className="flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-crafted-brand-lightViolet shrink-0" />
+                  <select
+                    value={selectedFormat}
+                    onChange={(e) => setSelectedFormat(e.target.value)}
+                    className="w-full bg-crafted-bg text-crafted-text text-xs px-3 py-2 rounded-xl border border-crafted-border focus:outline-none cursor-pointer"
+                  >
+                    {formats.map((f) => (
+                      <option key={f} value={f}>
+                        {f === 'ALL' ? 'All Formats' : f}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Sort Order */}
+                <div className="flex items-center gap-2">
+                  <ArrowUpDown className="w-4 h-4 text-amber-400 shrink-0" />
                   <select
                     value={selectedSort}
                     onChange={(e) => setSelectedSort(e.target.value as any)}
-                    className="px-3 py-2 rounded-xl bg-crafted-bg border border-crafted-border text-crafted-text text-xs font-mono focus:outline-none cursor-pointer"
+                    className="w-full bg-crafted-bg text-crafted-text text-xs px-3 py-2 rounded-xl border border-crafted-border focus:outline-none cursor-pointer"
                   >
                     <option value="POPULARITY_DESC">Most Popular</option>
-                    <option value="SCORE_DESC">Highest Rated</option>
                     <option value="TRENDING_DESC">Trending</option>
-                    <option value="START_DATE_DESC">Newest First</option>
+                    <option value="SCORE_DESC">Highest Rated</option>
+                    <option value="START_DATE_DESC">Newest Added</option>
                   </select>
                 </div>
               </div>
+            </div>
 
-              {/* Genre Filter Pills */}
-              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-                <Filter className="w-4 h-4 text-crafted-brand-rust shrink-0" />
-                {genres.map((genre) => (
-                  <button
-                    key={genre}
-                    onClick={() => setSelectedGenre(genre)}
-                    className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
-                      selectedGenre === genre
-                        ? 'bg-crafted-brand-rust text-white shadow-crafted-glow'
-                        : 'bg-crafted-surface hover:bg-crafted-surface-hover text-crafted-text-muted hover:text-white border border-crafted-border'
-                    }`}
-                  >
-                    {genre}
-                  </button>
+            {/* Results Grid */}
+            {isLoading ? (
+              <div className="py-24 text-center space-y-3">
+                <div className="w-8 h-8 border-2 border-crafted-brand-rust border-t-transparent rounded-full animate-spin mx-auto" />
+                <p className="text-xs font-mono text-crafted-text-dim">Filtering AniList Catalog...</p>
+              </div>
+            ) : browseList.length === 0 ? (
+              <div className="py-24 text-center space-y-3">
+                <Sparkles className="w-8 h-8 text-crafted-brand-rustLight mx-auto" />
+                <p className="text-sm font-semibold text-white">No results found</p>
+                <p className="text-xs text-crafted-text-dim">Try broadening your search or genre filter.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
+                {browseList.map((anime) => (
+                  <AnimeCard key={anime.id} anime={anime} isGrid />
                 ))}
               </div>
-
-              {/* Grid */}
-              {isLoading ? (
-                <div className="py-20 text-center space-y-3">
-                  <div className="w-8 h-8 border-2 border-crafted-brand-rust border-t-transparent rounded-full animate-spin mx-auto" />
-                  <p className="text-xs font-mono text-crafted-text-dim">Filtering anime catalog...</p>
-                </div>
-              ) : browseList.length === 0 ? (
-                <div className="py-20 text-center space-y-3">
-                  <Sparkles className="w-10 h-10 text-crafted-text-dim opacity-40 mx-auto" />
-                  <p className="text-sm text-crafted-text">No anime found matching selected filters.</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
-                  {browseList.map((anime) => (
-                    <AnimeCard key={anime.id} anime={anime} isGrid={true} />
-                  ))}
-                </div>
-              )}
-            </div>
+            )}
           </div>
         )}
 
-        {/* MyAnimeList Watchlist & Scrobble Hub View (Phase 5) */}
+        {/* Watchlist & MAL Hub Tab */}
         {activeNavTab === 'watchlist' && <MALWatchlistHub />}
       </main>
 
-      {/* Crafted Co. Branded Footer */}
+      {/* Global Footer */}
       <Footer />
 
-      {/* Player, Search, and Account Modals */}
+      {/* Persistent Video Player Modal */}
       <VideoPlayerModal />
+
+      {/* Stremio / Torrentio Stream Selection Modal */}
+      <StreamSelectModal
+        isOpen={usePlayerStore((s) => s.isStreamSelectOpen)}
+        onClose={usePlayerStore((s) => s.closeStreamSelector)}
+        anime={usePlayerStore((s) => s.activeAnime)}
+        episode={usePlayerStore((s) => s.activeEpisode)}
+        onSelectStream={(torrent) => usePlayerStore.getState().playWithTorrent(torrent)}
+      />
+
+      {/* Search Modal */}
       <SearchModal />
+
+      {/* MyAnimeList OAuth Authentication Modal */}
       <MALLoginModal />
+
+      {/* Settings & Preferences Modal */}
+      <SettingsModal />
     </div>
   );
 };

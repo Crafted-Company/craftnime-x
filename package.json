@@ -23,9 +23,13 @@
     "clsx": "^2.1.1",
     "hls.js": "^1.5.17",
     "lucide-react": "^0.475.0",
+    "parse-torrent": "^11.0.24",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind-merge": "^3.0.1",
+    "torrent-stream": "^1.2.1",
+    "webtorrent": "^3.0.21",
+    "xml2js": "^0.6.2",
     "zustand": "^5.0.3"
   },
   "devDependencies": {
@@ -35,6 +39,7 @@
     "@types/node": "^22.13.4",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
+    "@types/xml2js": "^0.4.14",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "concurrently": "^10.0.5",

@@ -22,7 +22,7 @@ export const AnimeCard: React.FC<AnimeCardProps> = ({ anime, isGrid = false }) =
     anime.coverImage?.large ||
     anime.coverImage?.medium ||
     anime.bannerImage ||
-    'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx151807-33nNwsEadAiT.jpg';
+    'https://media.kitsu.app/anime/poster_images/11469/large.jpg';
 
   const titleString =
     typeof anime.title === 'object'
@@ -47,13 +47,32 @@ export const AnimeCard: React.FC<AnimeCardProps> = ({ anime, isGrid = false }) =
           referrerPolicy="no-referrer"
           onError={(e) => {
             (e.target as HTMLImageElement).src =
-              'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx151807-33nNwsEadAiT.jpg';
+              'https://media.kitsu.app/anime/poster_images/11469/large.jpg';
           }}
           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
         />
 
         {/* Subtle Top Gradient for Badge Readability */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-transparent to-black/20 pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-transparent to-black/60 pointer-events-none" />
+
+        {/* Crafted Co. Release Badge */}
+        {anime.nextAiringEpisode ? (
+          <div className="absolute bottom-2.5 left-2 right-2 flex items-center justify-center pointer-events-none z-10">
+            <div className="inline-flex items-center text-[10px] font-bold overflow-hidden rounded-lg shadow-xl border border-crafted-border tracking-tight backdrop-blur-md">
+              <span className="bg-crafted-brand-rust px-2 py-0.5 text-white font-sans">Next Episode</span>
+              <span className="bg-crafted-surface/90 px-2 py-0.5 text-crafted-text font-sans border-l border-crafted-border">
+                {new Date(anime.nextAiringEpisode.airingAt * 1000).toLocaleDateString('en-US', { weekday: 'long' })}
+              </span>
+            </div>
+          </div>
+        ) : anime.status === 'RELEASING' ? (
+          <div className="absolute bottom-2.5 left-2 right-2 flex items-center justify-center pointer-events-none z-10">
+            <div className="inline-flex items-center text-[10px] font-bold overflow-hidden rounded-lg shadow-xl border border-crafted-border tracking-tight backdrop-blur-md">
+              <span className="bg-crafted-brand-rust px-2 py-0.5 text-white font-sans">New Episode</span>
+              <span className="bg-crafted-surface/90 px-2 py-0.5 text-crafted-text font-sans border-l border-crafted-border">Watch Now</span>
+            </div>
+          </div>
+        ) : null}
 
         {/* Top Floating Badges */}
         <div className="absolute top-2 left-2 right-2 flex items-center justify-between pointer-events-none">
@@ -70,8 +89,8 @@ export const AnimeCard: React.FC<AnimeCardProps> = ({ anime, isGrid = false }) =
           </span>
         </div>
 
-        {/* Hover Quick Action Overlay */}
-        <div className="absolute inset-0 bg-black/65 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center p-3 gap-2.5 backdrop-blur-[2px]">
+        {/* Hover Quick Action Overlay (Desktop Only - Mobile taps open Details Page) */}
+        <div className="absolute inset-0 bg-black/65 opacity-0 group-hover:opacity-100 transition-opacity duration-300 hidden md:flex items-center justify-center p-3 gap-2.5 backdrop-blur-[2px] pointer-events-none group-hover:pointer-events-auto">
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -97,6 +116,16 @@ export const AnimeCard: React.FC<AnimeCardProps> = ({ anime, isGrid = false }) =
             {inWatchlist ? <Check className="w-4 h-4 text-emerald-400" /> : <Plus className="w-4 h-4" />}
           </button>
         </div>
+
+        {/* Continue Watching Progress Bar */}
+        {typeof (anime as any).progressPercent === 'number' && (anime as any).progressPercent > 0 && (
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/75 z-20 overflow-hidden">
+            <div
+              className="h-full bg-crafted-brand-rust transition-all"
+              style={{ width: `${Math.min(100, Math.max(5, (anime as any).progressPercent))}%` }}
+            />
+          </div>
+        )}
       </div>
 
       {/* Card Info Box */}
@@ -107,10 +136,14 @@ export const AnimeCard: React.FC<AnimeCardProps> = ({ anime, isGrid = false }) =
 
         <div className="flex items-center justify-between text-[11px] text-crafted-text-dim font-mono">
           <span className="truncate max-w-[65%]">
-            {genresList[0] || 'Anime'}
+            {(anime as any).lastWatchedEpisodeNumber
+              ? `EP ${(anime as any).lastWatchedEpisodeNumber}`
+              : (genresList[0] || 'Anime')}
           </span>
           <span className="text-crafted-brand-lightViolet font-semibold shrink-0">
-            {anime.episodes ? `${anime.episodes} EPS` : 'SUB/DUB'}
+            {(anime as any).lastWatchedEpisodeNumber
+              ? `${(anime as any).progressPercent || 0}%`
+              : (anime.episodes ? `${anime.episodes} EPS` : 'SUB/DUB')}
           </span>
         </div>
       </div>

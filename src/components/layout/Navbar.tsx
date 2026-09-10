@@ -7,12 +7,16 @@ import {
   Tv,
   Menu,
   X,
-  LogOut,
   Flame,
+  Settings,
+  Sparkles,
+  ChevronDown,
+  LogOut,
 } from 'lucide-react';
 import { Logo } from '../common/Logo';
 import { useAnimeStore } from '../../store/useAnimeStore';
 import { useMALStore } from '../../store/useMALStore';
+import { useSettingsStore } from '../../store/useSettingsStore';
 
 interface NavItem {
   id: 'home' | 'trending' | 'seasonal' | 'browse' | 'watchlist';
@@ -23,9 +27,15 @@ interface NavItem {
 
 export const Navbar: React.FC = () => {
   const { activeNavTab, setActiveNavTab, setSearchModalOpen, watchlist } = useAnimeStore();
-  const { user, toggleLoginModal, logout } = useMALStore();
+  const { user, toggleLoginModal, logout, syncedWatchingList, syncedPlanList } = useMALStore();
+  const { openSettings } = useSettingsStore();
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+
+  const displayWatchlistCount = user.isLoggedIn
+    ? (syncedWatchingList.length + syncedPlanList.length)
+    : watchlist.length;
 
   useEffect(() => {
     const handleScroll = () => {
@@ -52,7 +62,7 @@ export const Navbar: React.FC = () => {
     { id: 'trending', label: 'Trending', icon: <Flame className="w-4 h-4" /> },
     { id: 'seasonal', label: 'Seasonal', icon: <Layers className="w-4 h-4" /> },
     { id: 'browse', label: 'Browse', icon: <Search className="w-4 h-4" /> },
-    { id: 'watchlist', label: 'Watchlist', icon: <Bookmark className="w-4 h-4" />, count: watchlist.length },
+    { id: 'watchlist', label: 'Watchlist', icon: <Bookmark className="w-4 h-4" />, count: displayWatchlistCount },
   ];
 
   return (
@@ -117,38 +127,108 @@ export const Navbar: React.FC = () => {
               </kbd>
             </button>
 
-            {/* Account Sync Pill */}
-            <button
-              onClick={() => toggleLoginModal(true)}
-              className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-crafted-panel hover:bg-crafted-surface border border-crafted-border text-xs font-mono transition-all cursor-pointer"
-            >
-              {user.isLoggedIn ? (
+            {/* Account & Profile Menu Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+                className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-crafted-panel hover:bg-crafted-surface border border-crafted-border text-xs font-mono transition-all cursor-pointer"
+              >
+                {user.isLoggedIn ? (
+                  <>
+                    <div className="relative">
+                      <img
+                        src={user.avatarUrl}
+                        alt=""
+                        referrerPolicy="no-referrer"
+                        className="w-5 h-5 rounded-md object-cover border border-crafted-brand-rust"
+                      />
+                      <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-crafted-bg animate-pulse" />
+                    </div>
+                    <span className="hidden sm:inline text-crafted-text font-medium truncate max-w-[90px]">
+                      {user.username}
+                    </span>
+                    <span className="text-[10px] px-1 rounded bg-crafted-brand-violet/30 text-crafted-brand-lightViolet font-mono uppercase">
+                      MAL
+                    </span>
+                    <ChevronDown className="w-3 h-3 text-crafted-text-dim" />
+                  </>
+                ) : (
+                  <>
+                    <User className="w-3.5 h-3.5 text-crafted-brand-rust" />
+                    <span className="text-crafted-text-muted hover:text-white">
+                      Profile
+                    </span>
+                    <ChevronDown className="w-3 h-3 text-crafted-text-dim" />
+                  </>
+                )}
+              </button>
+
+              {/* Profile Dropdown Popup */}
+              {isProfileDropdownOpen && (
                 <>
-                  <div className="relative">
-                    <img
-                      src={user.avatarUrl}
-                      alt=""
-                      referrerPolicy="no-referrer"
-                      className="w-5 h-5 rounded-md object-cover border border-crafted-brand-rust"
-                    />
-                    <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-crafted-bg animate-pulse" />
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setIsProfileDropdownOpen(false)}
+                  />
+                  <div className="absolute right-0 top-11 w-56 bg-crafted-surface/95 border border-crafted-border rounded-2xl shadow-2xl backdrop-blur-xl p-2 z-50 animate-in fade-in slide-in-from-top-2 space-y-1">
+                    <div className="px-3 py-2 border-b border-crafted-border/60">
+                      <p className="text-xs font-bold text-white truncate">
+                        {user.isLoggedIn ? user.username : 'Craftnime User'}
+                      </p>
+                      <p className="text-[10px] font-mono text-crafted-brand-rustLight">
+                        {user.isLoggedIn ? `${user.episodesWatched} episodes synced` : 'Guest Mode'}
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setIsProfileDropdownOpen(false);
+                        openSettings();
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-crafted-text hover:text-white hover:bg-crafted-panel transition-colors cursor-pointer"
+                    >
+                      <Settings className="w-4 h-4 text-crafted-brand-rustLight" />
+                      <span>Player Settings</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setIsProfileDropdownOpen(false);
+                        toggleLoginModal(true);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-crafted-text hover:text-white hover:bg-crafted-panel transition-colors cursor-pointer"
+                    >
+                      <Sparkles className="w-4 h-4 text-crafted-brand-lightViolet" />
+                      <span>MyAnimeList Sync</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setIsProfileDropdownOpen(false);
+                        setActiveNavTab('watchlist');
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-crafted-text hover:text-white hover:bg-crafted-panel transition-colors cursor-pointer"
+                    >
+                      <Bookmark className="w-4 h-4 text-amber-400" />
+                      <span>Watchlist ({displayWatchlistCount})</span>
+                    </button>
+
+                    {user.isLoggedIn && (
+                      <button
+                        onClick={() => {
+                          setIsProfileDropdownOpen(false);
+                          logout();
+                        }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer pt-1 border-t border-crafted-border/60"
+                      >
+                        <X className="w-4 h-4" />
+                        <span>Disconnect Account</span>
+                      </button>
+                    )}
                   </div>
-                  <span className="hidden sm:inline text-crafted-text font-medium truncate max-w-[90px]">
-                    {user.username}
-                  </span>
-                  <span className="text-[10px] px-1 rounded bg-crafted-brand-violet/30 text-crafted-brand-lightViolet font-mono uppercase">
-                    MAL
-                  </span>
-                </>
-              ) : (
-                <>
-                  <User className="w-3.5 h-3.5 text-crafted-brand-rust" />
-                  <span className="text-crafted-text-muted hover:text-white">
-                    Sign In
-                  </span>
                 </>
               )}
-            </button>
+            </div>
 
             {/* Mobile Hamburger Menu Toggle Button */}
             <button
@@ -238,6 +318,19 @@ export const Navbar: React.FC = () => {
                     </button>
                   );
                 })}
+
+                <button
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    openSettings();
+                  }}
+                  className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold text-crafted-text-muted hover:bg-crafted-bg hover:text-white transition-all cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Settings className="w-4 h-4 text-crafted-brand-rustLight" />
+                    <span>Settings & Preferences</span>
+                  </div>
+                </button>
               </div>
             </div>
 

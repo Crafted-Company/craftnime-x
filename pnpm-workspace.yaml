@@ -1,3 +1,8 @@
 allowBuilds:
+  bufferutil: true
   electron-winstaller: set this to true or false
   esbuild: true
+  ip-set: true
+  node-datachannel: true
+  utf-8-validate: true
+  utp-native: true

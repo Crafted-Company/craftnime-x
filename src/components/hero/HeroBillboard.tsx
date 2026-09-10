@@ -139,15 +139,15 @@ export const HeroBillboard: React.FC = () => {
           </div>
 
           {/* Rating & Metadata Strip */}
-          <div className="flex items-center gap-3 text-xs font-mono text-crafted-text-muted">
-            <div className="flex items-center gap-1 text-amber-400 font-bold bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/20">
+          <div className="flex items-center gap-2 sm:gap-3 text-xs font-mono text-crafted-text-muted flex-wrap">
+            <div className="flex items-center gap-1 text-amber-400 font-bold bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/20 shrink-0">
               <Star className="w-3.5 h-3.5 fill-amber-400" />
               <span>{((currentAnime.averageScore || 88) / 10).toFixed(1)} / 10</span>
             </div>
-            <span>•</span>
-            <span className="text-crafted-text font-medium">{epDisplay}</span>
-            <span>•</span>
-            <span className="text-crafted-text-dim">
+            <span className="hidden xs:inline">•</span>
+            <span className="text-crafted-text font-medium shrink-0">{epDisplay}</span>
+            <span className="hidden xs:inline">•</span>
+            <span className="text-crafted-text-dim max-w-full truncate">
               {genresList.slice(0, 3).join(' / ')}
             </span>
           </div>

@@ -1,122 +1,321 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Hls from 'hls.js';
 import {
-  X,
   Play,
   Pause,
+  RotateCcw,
+  RotateCw,
   Volume2,
   VolumeX,
   Maximize,
   Minimize,
-  FastForward,
-  CheckCircle2,
   SkipForward,
   SkipBack,
-  List,
-  Server,
-  RefreshCw,
   Settings,
+  ChevronLeft,
+  X,
+  List,
+  Sparkles,
   Tv,
+  CheckCircle2,
+  Zap,
+  Subtitles,
+  Check,
 } from 'lucide-react';
 import { usePlayerStore } from '../../store/usePlayerStore';
-import { useMALStore } from '../../store/useMALStore';
 import { useAnimeStore } from '../../store/useAnimeStore';
+import { useMALStore } from '../../store/useMALStore';
+import { useWatchedStore } from '../../store/useWatchedStore';
+import { useSettingsStore } from '../../store/useSettingsStore';
+import { AnimeStreamService } from '../../services/animeStream';
+import { StremioAddonService, StremioStream } from '../../services/stremioAddon';
+import { SubtitleService, SubtitleCue } from '../../services/subtitleService';
 
 export const VideoPlayerModal: React.FC = () => {
   const {
     isPlayerOpen,
-    closePlayer,
     activeAnime,
     activeEpisode,
     episodeList,
-    isPlaying,
-    setPlaying,
-    volume,
-    setVolume,
-    isMuted,
-    toggleMute,
-    playbackSpeed,
-    setPlaybackSpeed,
-    audioTrack,
-    setAudioTrack,
-    autoSkipIntro,
-    autoSkipOutro,
-    skipIntroInterval,
-    skipOutroInterval,
+    closePlayer,
+    playEpisode,
     playNextEpisode,
     playPreviousEpisode,
-    playEpisode,
+    audioTrack,
+    setAudioTrack,
+    selectedTorrent,
+    openStreamSelector,
   } = usePlayerStore();
 
-  const { user, isAutoScrobbleEnabled, scrobbleEpisode } = useMALStore();
   const { recordWatchProgress } = useAnimeStore();
+  const { user, isAutoScrobbleEnabled, scrobbleEpisode } = useMALStore();
+  const { isEpisodeWatched, toggleWatchedEpisode } = useWatchedStore();
 
-  const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
 
-  const [directStreamUrl, setDirectStreamUrl] = useState<string | null>(null);
-  const [embedUrl, setEmbedUrl] = useState<string | null>(null);
-  const [isLoadingStream, setIsLoadingStream] = useState(true);
-  const [playerMode, setPlayerMode] = useState<'hls' | 'embed'>('hls');
-  const [showControls, setShowControls] = useState(true);
-  const [showAniSkipIntroPill, setShowAniSkipIntroPill] = useState(false);
-  const [showAniSkipOutroPill, setShowAniSkipOutroPill] = useState(false);
-  const [scrobbledNotice, setScrobbledNotice] = useState(false);
-  const [showEpisodeDrawer, setShowEpisodeDrawer] = useState(false);
-  const [showSettingsDrawer, setShowSettingsDrawer] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  // Playback States
+  const [isPlaying, setPlaying] = useState(false);
   const [currentTimeState, setCurrentTimeState] = useState(0);
-  const [durationState, setDurationState] = useState(1440);
+  const [durationState, setDurationState] = useState(0);
+  const [volume, setVolumeState] = useState(1);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const { seekStep, setSeekStep } = useSettingsStore();
+  const lastRecordedTimeRef = useRef<number>(0);
+  const [showControls, setShowControls] = useState(true);
+  const [showSettingsDrawer, setShowSettingsDrawer] = useState(false);
+  const [showEpisodeDrawer, setShowEpisodeDrawer] = useState(false);
+  const [availableQualities, setAvailableQualities] = useState<string[]>(['Auto', '1080p', '720p', '480p']);
+  const [selectedQuality, setSelectedQuality] = useState('Auto');
+  const [scrobbledNotice, setScrobbledNotice] = useState(false);
 
-  // Settings
-  const [seekStep, setSeekStep] = useState<5 | 10>(10);
-  const [selectedQuality, setSelectedQuality] = useState<string>('1080p');
-  const [availableQualities, setAvailableQualities] = useState<string[]>(['1080p', '720p', '480p', 'Auto']);
+  // Stream URLs
+  const [directStreamUrl, setDirectStreamUrl] = useState<string | null>(null);
+  const [isLoadingStream, setIsLoadingStream] = useState(true);
+  const [isBuffering, setIsBuffering] = useState(false);
+  const [loadingStatusText, setLoadingStatusText] = useState('Connecting to stream source...');
+  const [streamError, setStreamError] = useState<string | null>(null);
+  const [torrentInfo, setTorrentInfo] = useState<StremioStream | null>(null);
+  const [p2pStats, setP2pStats] = useState<{ numPeers: number; downloadSpeed: number } | null>(null);
 
-  // Double-tap visual feedback
-  const [doubleTapFeedback, setDoubleTapFeedback] = useState<{ side: 'left' | 'right'; show: boolean } | null>(null);
+  // Subtitles (CC) State (Stremio Standard)
+  const [showSubtitlesDrawer, setShowSubtitlesDrawer] = useState(false);
+  const [selectedSubtitleTrack, setSelectedSubtitleTrack] = useState<string | 'off'>('default');
+  const [subtitleSearch, setSubtitleSearch] = useState('');
+  const [subtitleDelay, setSubtitleDelay] = useState<number>(0.0);
+  const [subtitleSize, setSubtitleSize] = useState<number>(100);
+  const [subtitleOffsetVertical, setSubtitleOffsetVertical] = useState<number>(0);
+  const [subtitleCues, setSubtitleCues] = useState<SubtitleCue[]>([]);
+  const [availableSubtitles, setAvailableSubtitles] = useState<Array<{ id: string; label: string; lang: string; isDefault?: boolean; url?: string }>>([
+    { id: 'default-en', label: 'English (Default)', lang: 'en', isDefault: true },
+  ]);
 
-  // Anti-loop state for auto-skip
+  const enableSubtitles = (trackId: string | 'off') => {
+    setSelectedSubtitleTrack(trackId);
+  };
+
+  // Discover real subtitle tracks from cloud & local torrent
+  useEffect(() => {
+    if (!isPlayerOpen || !activeAnime) return;
+    let isMounted = true;
+
+    const loadTracks = async () => {
+      const tracks = await SubtitleService.fetchAvailableTracks(activeAnime, activeEpisode?.number);
+      if (isMounted && tracks.length > 0) {
+        setAvailableSubtitles(tracks);
+        const preferred = tracks.find((t) => t.isDefault) || tracks[0];
+        if (preferred) {
+          setSelectedSubtitleTrack(preferred.id);
+        }
+      }
+    };
+
+    loadTracks();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeAnime?.id, activeEpisode?.number, isPlayerOpen]);
+
+  // Fetch and parse subtitle cues whenever selected track changes
+  useEffect(() => {
+    if (selectedSubtitleTrack === 'off' || !isPlayerOpen) {
+      setSubtitleCues([]);
+      return;
+    }
+
+    let isMounted = true;
+    const trackObj = availableSubtitles.find((t) => t.id === selectedSubtitleTrack);
+
+    const loadCues = async () => {
+      if (trackObj) {
+        const cues = await SubtitleService.fetchTrackCues(trackObj);
+        if (isMounted) {
+          setSubtitleCues(cues);
+        }
+      }
+    };
+
+    loadCues();
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedSubtitleTrack, availableSubtitles, isPlayerOpen]);
+
+  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastTimeRef = useRef<number>(0);
   const hasAutoSkippedIntroRef = useRef(false);
   const hasAutoSkippedOutroRef = useRef(false);
-  const lastTimeRef = useRef(0);
-  const clickTimerRef = useRef<any>(null);
 
-  const controlsTimeoutRef = useRef<any>(null);
-
+  // Reset Controls Autohide Timer
   const resetControlsTimeout = () => {
     setShowControls(true);
     if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
     controlsTimeoutRef.current = setTimeout(() => {
-      if (isPlaying && playerMode === 'hls' && !showSettingsDrawer && !showEpisodeDrawer) {
+      if (isPlaying && !showSettingsDrawer && !showEpisodeDrawer) {
         setShowControls(false);
       }
-    }, 4500);
+    }, 3500);
   };
 
-  // Reset flags when episode changes
+  // Reset flags when episode changes or player opens (always start cleanly from 0:00)
   useEffect(() => {
     hasAutoSkippedIntroRef.current = false;
     hasAutoSkippedOutroRef.current = false;
     lastTimeRef.current = 0;
     setCurrentTimeState(0);
-  }, [activeEpisode?.number, activeAnime?.id]);
+    setDurationState(0);
+    setScrobbledNotice(false);
+    setStreamError(null);
+    setDirectStreamUrl(null);
+    if (videoRef.current) {
+      videoRef.current.currentTime = 0;
+    }
+  }, [activeEpisode?.number, activeAnime?.id, isPlayerOpen]);
 
-  // Resolve Real Stream on Episode / Anime change
+  // Autohide controls when playback starts
+  useEffect(() => {
+    if (isPlaying) {
+      resetControlsTimeout();
+    }
+  }, [isPlaying]);
+
+  // Device orientation: Force landscape mode when player is open, restore portrait on exit
+  useEffect(() => {
+    if (isPlayerOpen) {
+      try {
+        if ((window as any).AndroidOrientationBridge?.setLandscape) {
+          (window as any).AndroidOrientationBridge.setLandscape();
+        } else if (screen.orientation && (screen.orientation as any).lock) {
+          (screen.orientation as any).lock('landscape').catch(() => {});
+        }
+      } catch {}
+    } else {
+      try {
+        if ((window as any).AndroidOrientationBridge?.setPortrait) {
+          (window as any).AndroidOrientationBridge.setPortrait();
+        } else if (screen.orientation && (screen.orientation as any).unlock) {
+          (screen.orientation as any).unlock();
+        }
+      } catch {}
+    }
+  }, [isPlayerOpen]);
+
+  // Poll P2P torrent stats when torrent stream is active
+  useEffect(() => {
+    if (!torrentInfo || typeof window === 'undefined' || !(window as any).require) return;
+    const { ipcRenderer } = (window as any).require('electron');
+
+    const interval = setInterval(async () => {
+      try {
+        const stats = await ipcRenderer.invoke('get-torrent-stats');
+        if (stats?.isReady) {
+          setP2pStats({ numPeers: stats.numPeers || 0, downloadSpeed: stats.downloadSpeed || 0 });
+        }
+      } catch (e) {}
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [torrentInfo]);
+
+  // Clean up torrent engine when modal closes
+  useEffect(() => {
+    if (!isPlayerOpen && typeof window !== 'undefined' && (window as any).require) {
+      try {
+        const { ipcRenderer } = (window as any).require('electron');
+        ipcRenderer.invoke('stop-torrent-stream');
+      } catch (e) {}
+      setTorrentInfo(null);
+      setP2pStats(null);
+    }
+  }, [isPlayerOpen]);
+
+  // Listen to MPV native player IPC events (Stremio / Miru standard)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !(window as any).require) return;
+    const { ipcRenderer } = (window as any).require('electron');
+
+    const handleMpvEvent = (_event: any, evt: any) => {
+      if (evt.event === 'property-change') {
+        if (evt.name === 'time-pos' && typeof evt.value === 'number') {
+          setCurrentTimeState(evt.value);
+        } else if (evt.name === 'duration' && typeof evt.value === 'number' && evt.value > 300) {
+          setDurationState(evt.value);
+        } else if (evt.name === 'pause') {
+          setPlaying(!evt.value);
+        }
+      } else if (evt.event === 'close') {
+        // MPV player window closed
+      }
+    };
+
+    ipcRenderer.on('mpv-event', handleMpvEvent);
+    return () => {
+      ipcRenderer.removeListener('mpv-event', handleMpvEvent);
+    };
+  }, []);
+
+  const openInMpv = async () => {
+    if (!directStreamUrl || typeof window === 'undefined' || !(window as any).require) return;
+    const { ipcRenderer } = (window as any).require('electron');
+    const title = activeAnime?.title?.english || activeAnime?.title?.romaji || 'Anime';
+    const epTitle = activeEpisode?.title || `Episode ${activeEpisode?.number || 1}`;
+    await ipcRenderer.invoke('launch-mpv-player', {
+      streamUrl: directStreamUrl,
+      animeTitle: title,
+      episodeTitle: epTitle,
+    });
+  };
+
+  // Resolve Stream on Episode / Anime / Audio track change
   useEffect(() => {
     if (!isPlayerOpen || !activeAnime || !activeEpisode) return;
 
     let isMounted = true;
     setIsLoadingStream(true);
+    setStreamError(null);
+    setTorrentInfo(null);
 
     const title = activeAnime.title?.english || activeAnime.title?.romaji || '';
     const epNum = activeEpisode.number;
 
     const resolveStream = async () => {
       try {
+        setLoadingStatusText('Searching Stremio Swarms & Nyaa Indexes...');
+        // Priority 1: Instant High-Speed Nyaa Sequential P2P Torrent (Zero Maintenance)
         if (typeof window !== 'undefined' && (window as any).require) {
           const { ipcRenderer } = (window as any).require('electron');
+          
+          try {
+            const stream = selectedTorrent?.magnet
+              ? selectedTorrent
+              : await StremioAddonService.findEpisodeStream(
+                  activeAnime,
+                  epNum,
+                  audioTrack === 'dub'
+                );
+
+            if (stream?.magnet && isMounted) {
+              setLoadingStatusText(`Connecting to swarm (${stream.seeders || 0} seeders) & buffering pieces...`);
+              const res = await ipcRenderer.invoke('start-torrent-stream', {
+                magnet: stream.magnet,
+                fileIdx: stream.fileIdx,
+              });
+              if (res?.streamUrl && isMounted) {
+                setTorrentInfo(stream);
+                setDirectStreamUrl(res.streamUrl);
+                setLoadingStatusText('Buffer ready. Initializing video decoder...');
+                return;
+              }
+            }
+          } catch (tErr) {
+            console.warn('Stremio torrent resolution fallback triggered:', tErr);
+          }
+
+          setLoadingStatusText('Resolving direct high-speed HLS stream...');
+          // Fallback 1.5: Desktop Script Resolver
           const result = await ipcRenderer.invoke('resolve-anime-stream', {
             title,
             episodeNumber: epNum,
@@ -127,32 +326,54 @@ export const VideoPlayerModal: React.FC = () => {
 
           if (result?.streamUrl) {
             setDirectStreamUrl(result.streamUrl);
-            setEmbedUrl(result.embedUrl || null);
-            setPlayerMode('hls');
-          } else if (result?.embedUrl) {
-            setDirectStreamUrl(null);
-            setEmbedUrl(result.embedUrl);
-            setPlayerMode('embed');
+            setLoadingStatusText('Direct master HLS connected.');
           } else {
-            const fb = `https://vidsrc.me/embed/anime?mal=${activeAnime.malId || activeAnime.id}&ep=${epNum}`;
-            setDirectStreamUrl(null);
-            setEmbedUrl(fb);
-            setPlayerMode('embed');
+            const webRes = await AnimeStreamService.resolveStream(title, epNum, activeAnime.malId, audioTrack);
+            if (webRes.sources?.[0]?.url) {
+              setDirectStreamUrl(webRes.sources[0].url);
+              setLoadingStatusText('Direct master HLS connected.');
+              if (webRes.subtitles && webRes.subtitles.length > 0) {
+                const newSubs = webRes.subtitles.map((s, idx) => ({
+                  id: `stream-sub-${idx}`,
+                  label: s.label || s.lang,
+                  lang: s.lang,
+                  isDefault: s.isDefault,
+                  url: s.url,
+                }));
+                setAvailableSubtitles((prev) => [...prev, ...newSubs]);
+              }
+            } else {
+              setStreamError('Could not resolve stream source for this episode.');
+            }
           }
         } else {
-          const fb = `https://vidsrc.me/embed/anime?mal=${activeAnime.malId || activeAnime.id}&ep=${epNum}`;
-          setDirectStreamUrl(null);
-          setEmbedUrl(fb);
-          setPlayerMode('embed');
+          setLoadingStatusText('Resolving direct master HLS stream...');
+          const webRes = await AnimeStreamService.resolveStream(title, epNum, activeAnime.malId, audioTrack);
+          if (!isMounted) return;
+          if (webRes.sources?.[0]?.url) {
+            setDirectStreamUrl(webRes.sources[0].url);
+            setLoadingStatusText('Direct master HLS connected.');
+            if (webRes.subtitles && webRes.subtitles.length > 0) {
+              const newSubs = webRes.subtitles.map((s, idx) => ({
+                id: `stream-sub-${idx}`,
+                label: s.label || s.lang,
+                lang: s.lang,
+                isDefault: s.isDefault,
+                url: s.url,
+              }));
+              setAvailableSubtitles((prev) => [...prev, ...newSubs]);
+            }
+          } else if (webRes.embedUrl) {
+            setDirectStreamUrl(webRes.embedUrl);
+          } else {
+            setDirectStreamUrl(`https://vidsrc.cc/v2/embed/anime/mal/${activeAnime.malId || activeAnime.id}/${epNum}`);
+          }
         }
-      } catch (err) {
+      } catch (err: any) {
         console.warn('Stream resolution error:', err);
-        const fb = `https://vidsrc.me/embed/anime?mal=${activeAnime.malId || activeAnime.id}&ep=${epNum}`;
-        setDirectStreamUrl(null);
-        setEmbedUrl(fb);
-        setPlayerMode('embed');
+        if (isMounted) setStreamError('Stream resolution error occurred.');
       } finally {
-        if (isMounted) setIsLoadingStream(false);
+        if (isMounted && !torrentInfo) setIsLoadingStream(false);
       }
     };
 
@@ -161,61 +382,83 @@ export const VideoPlayerModal: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [activeAnime?.id, activeEpisode?.number, audioTrack, isPlayerOpen]);
+  }, [activeAnime?.id, activeEpisode?.number, audioTrack, isPlayerOpen, selectedTorrent]);
 
-  // HLS Stream Attachment
+  // Stream Attachment (HLS vs Direct P2P/MP4)
   useEffect(() => {
-    if (playerMode !== 'hls' || !directStreamUrl || !videoRef.current) return;
+    if (!directStreamUrl || !videoRef.current) return;
 
     const video = videoRef.current;
+    video.currentTime = 0;
 
-    if (Hls.isSupported()) {
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-      }
+    const isHlsStream = directStreamUrl.includes('.m3u8');
 
-      const hls = new Hls({
-        enableWorker: true,
-        lowLatencyMode: true,
-        startLevel: -1,
-      });
-
-      hls.loadSource(directStreamUrl);
-      hls.attachMedia(video);
-      hlsRef.current = hls;
-
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        const levels = hls.levels.map((l) => `${l.height}p`);
-        if (levels.length > 0) {
-          setAvailableQualities([...Array.from(new Set(levels)), 'Auto']);
+    if (isHlsStream) {
+      if (Hls.isSupported()) {
+        if (hlsRef.current) {
+          hlsRef.current.destroy();
         }
+
+        const hls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: false,
+          maxBufferLength: 60,
+          maxMaxBufferLength: 300,
+          maxBufferSize: 60 * 1000 * 1000,
+          backBufferLength: 30,
+          startLevel: -1,
+        });
+
+        hls.loadSource(directStreamUrl);
+        hls.attachMedia(video);
+        hlsRef.current = hls;
+
+        hls.on(Hls.Events.ERROR, (_event, data) => {
+          console.warn("[Player] HLS Event Error:", data);
+          if (data.fatal) {
+            console.log("[Player] Switching to native video source for direct playback");
+            if (videoRef.current) {
+              videoRef.current.src = directStreamUrl;
+              videoRef.current.currentTime = 0;
+              videoRef.current.play().catch(() => {});
+            }
+          }
+        });
+
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          const levels = hls.levels.map((l) => `${l.height}p`);
+          if (levels.length > 0) {
+            setAvailableQualities([...Array.from(new Set(levels)), 'Auto']);
+          }
+          video.currentTime = 0;
+          video.play().catch(() => {});
+          setPlaying(true);
+          setIsLoadingStream(false);
+        });
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = directStreamUrl;
+        video.currentTime = 0;
         video.play().catch(() => {});
         setPlaying(true);
         setIsLoadingStream(false);
-      });
+      }
+    } else {
+      // Direct P2P Torrent Stream / Native MP4
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+      setAvailableQualities(['1080p Master (P2P)', 'Auto']);
+      setSelectedQuality('1080p Master (P2P)');
 
-      hls.on(Hls.Events.ERROR, (_, data) => {
-        if (data.fatal) {
-          switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              hls.startLoad();
-              break;
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              hls.recoverMediaError();
-              break;
-            default:
-              console.warn('HLS Fatal, fallback to embed');
-              setPlayerMode('embed');
-              setIsLoadingStream(false);
-              break;
-          }
-        }
-      });
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = directStreamUrl;
-      video.play().catch(() => {});
-      setPlaying(true);
-      setIsLoadingStream(false);
+      video.load();
+      video.play().then(() => {
+        setPlaying(true);
+        setIsLoadingStream(false);
+      }).catch((e) => {
+        console.warn('Direct video play error:', e);
+      });
     }
 
     return () => {
@@ -224,7 +467,7 @@ export const VideoPlayerModal: React.FC = () => {
         hlsRef.current = null;
       }
     };
-  }, [directStreamUrl, playerMode]);
+  }, [directStreamUrl]);
 
   // Quality Change
   const handleQualityChange = (q: string) => {
@@ -247,151 +490,122 @@ export const VideoPlayerModal: React.FC = () => {
     const video = e.currentTarget;
     const now = video.currentTime;
     setCurrentTimeState(now);
-    if (video.duration) setDurationState(video.duration);
+    if (now > 0 && isLoadingStream) {
+      setIsLoadingStream(false);
+    }
 
-    const isPlayingForward = now >= lastTimeRef.current;
+    const validDuration = (video.duration && isFinite(video.duration) && video.duration > 300)
+      ? video.duration
+      : (activeAnime?.duration ? activeAnime.duration * 60 : 1440);
+
+    if (durationState <= 300 || (video.duration && isFinite(video.duration) && video.duration > 300)) {
+      setDurationState(validDuration);
+    }
+
     lastTimeRef.current = now;
 
-    // AniSkip Opening
-    if (skipIntroInterval) {
-      const inIntro = now >= skipIntroInterval.startTime && now <= skipIntroInterval.endTime;
-      setShowAniSkipIntroPill(inIntro);
-
-      if (inIntro && autoSkipIntro && isPlayingForward && !hasAutoSkippedIntroRef.current) {
-        hasAutoSkippedIntroRef.current = true;
-        video.currentTime = skipIntroInterval.endTime;
-      }
-    }
-
-    // AniSkip Ending
-    if (skipOutroInterval) {
-      const inOutro = now >= skipOutroInterval.startTime && now <= skipOutroInterval.endTime;
-      setShowAniSkipOutroPill(inOutro);
-
-      if (inOutro && autoSkipOutro && isPlayingForward && !hasAutoSkippedOutroRef.current) {
-        hasAutoSkippedOutroRef.current = true;
-        video.currentTime = skipOutroInterval.endTime;
-      }
-    }
-
-    // Auto-Scrobble at 80%
-    if (activeAnime && activeEpisode && video.duration > 0) {
-      const pct = (now / video.duration) * 100;
-      if (pct >= 80 && !scrobbledNotice && isAutoScrobbleEnabled && user.isLoggedIn) {
-        scrobbleEpisode(
-          activeAnime.title?.english || activeAnime.title?.romaji || 'Anime',
+    // Real-time Continue Watching Progress recording (Netflix & Stremio standard)
+    if (activeAnime && activeEpisode && now > 3) {
+      if (Math.abs(now - lastRecordedTimeRef.current) >= 5) {
+        lastRecordedTimeRef.current = now;
+        recordWatchProgress(
+          activeAnime,
           activeEpisode.number,
-          activeAnime.episodes
+          activeEpisode.title || `Episode ${activeEpisode.number}`,
+          now,
+          validDuration
         );
+      }
+    }
+
+    // Auto-Scrobble & Mark Watched at 80% (only if watched 80% of full episode)
+    if (activeAnime && activeEpisode && validDuration > 120) {
+      const pct = (now / validDuration) * 100;
+      if (pct >= 80 && !scrobbledNotice) {
         setScrobbledNotice(true);
+        setTimeout(() => setScrobbledNotice(false), 4000);
+        toggleWatchedEpisode(activeAnime.id, activeEpisode.number, activeAnime.episodes);
+        if (isAutoScrobbleEnabled && user.isLoggedIn) {
+          scrobbleEpisode(
+            activeAnime.title?.english || activeAnime.title?.romaji || 'Anime',
+            activeEpisode.number,
+            activeAnime.episodes
+          );
+        }
       }
-
-      recordWatchProgress(
-        activeAnime,
-        activeEpisode.number,
-        activeEpisode.title || `Episode ${activeEpisode.number}`,
-        pct,
-        now,
-        video.duration
-      );
     }
   };
 
-  // Touch / Click Area Handler with Phone Double-Tap to Seek
-  const handlePlayerAreaClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const width = rect.width;
+  // 3-Zone Touch & Double Tap Seek Handler
+  const [doubleTapFeedback, setDoubleTapFeedback] = useState<'left' | 'right' | null>(null);
+  const lastTapRef_zone = useRef<{ time: number; zone: 'left' | 'center' | 'right' }>({ time: 0, zone: 'center' });
+  const tapTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-    if (clickTimerRef.current) {
-      clearTimeout(clickTimerRef.current);
-      clickTimerRef.current = null;
+  const handleZoneClick = (zone: 'left' | 'center' | 'right') => {
+    const now = Date.now();
+    const prev = lastTapRef_zone.current;
 
-      if (clickX < width * 0.4) {
-        seekDelta(-seekStep);
-        setDoubleTapFeedback({ side: 'left', show: true });
-        setTimeout(() => setDoubleTapFeedback(null), 800);
-      } else if (clickX > width * 0.6) {
-        seekDelta(seekStep);
-        setDoubleTapFeedback({ side: 'right', show: true });
-        setTimeout(() => setDoubleTapFeedback(null), 800);
+    if (now - prev.time < 300 && prev.zone === zone && (zone === 'left' || zone === 'right')) {
+      if (tapTimeoutRef.current) clearTimeout(tapTimeoutRef.current);
+      // Double tap detected!
+      if (zone === 'left') {
+        seekRelative(-seekStep);
+        setDoubleTapFeedback('left');
+        setTimeout(() => setDoubleTapFeedback(null), 700);
       } else {
-        togglePlay();
+        seekRelative(seekStep);
+        setDoubleTapFeedback('right');
+        setTimeout(() => setDoubleTapFeedback(null), 700);
       }
-    } else {
-      clickTimerRef.current = setTimeout(() => {
-        clickTimerRef.current = null;
-        togglePlay();
-      }, 280);
+      lastTapRef_zone.current = { time: 0, zone: 'center' };
+      return;
     }
+
+    lastTapRef_zone.current = { time: now, zone };
+    if (tapTimeoutRef.current) clearTimeout(tapTimeoutRef.current);
+
+    tapTimeoutRef.current = setTimeout(() => {
+      // Single tap -> toggle controls
+      setShowControls((prev) => !prev);
+      resetControlsTimeout();
+    }, 280);
   };
 
-  // Keyboard Shortcuts
-  useEffect(() => {
-    if (!isPlayerOpen) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
-
-      switch (e.key.toLowerCase()) {
-        case ' ':
-        case 'k':
-          e.preventDefault();
-          togglePlay();
-          break;
-        case 'f':
-          e.preventDefault();
-          toggleFullscreen();
-          break;
-        case 'm':
-          e.preventDefault();
-          toggleMute();
-          break;
-        case 'arrowright':
-          e.preventDefault();
-          seekDelta(seekStep);
-          break;
-        case 'arrowleft':
-          e.preventDefault();
-          seekDelta(-seekStep);
-          break;
-        case 'n':
-          e.preventDefault();
-          playNextEpisode();
-          break;
-        case 'p':
-          e.preventDefault();
-          playPreviousEpisode();
-          break;
-        case 'escape':
-          closePlayer();
-          break;
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlayerOpen, isPlaying, seekStep]);
-
+  // Play / Pause Toggle
   const togglePlay = () => {
     if (!videoRef.current) return;
-    if (videoRef.current.paused) {
-      videoRef.current.play();
-      setPlaying(true);
-    } else {
+    if (isPlaying) {
       videoRef.current.pause();
-      setPlaying(false);
+    } else {
+      videoRef.current.play().catch(() => {});
+    }
+    resetControlsTimeout();
+  };
+
+  // Volume Change
+  const handleVolumeChange = (newVol: number) => {
+    setVolumeState(newVol);
+    if (videoRef.current) {
+      videoRef.current.volume = newVol;
+      videoRef.current.muted = newVol === 0;
+      setIsMuted(newVol === 0);
     }
   };
 
-  const seekDelta = (seconds: number) => {
+  const toggleMute = () => {
     if (!videoRef.current) return;
-    const target = Math.max(
-      0,
-      Math.min(videoRef.current.duration || 0, videoRef.current.currentTime + seconds)
-    );
-    videoRef.current.currentTime = target;
+    const nextMuted = !isMuted;
+    setIsMuted(nextMuted);
+    videoRef.current.muted = nextMuted;
+  };
+
+  // Seek Function
+  const seekRelative = (seconds: number) => {
+    if (!videoRef.current) return;
+    const maxDur = durationState > 0 ? durationState : (videoRef.current.duration || 1440);
+    const target = Math.max(0, Math.min(maxDur, currentTimeState + seconds));
     setCurrentTimeState(target);
+    videoRef.current.currentTime = target;
   };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -421,175 +635,662 @@ export const VideoPlayerModal: React.FC = () => {
 
   const epNum = activeEpisode?.number || 1;
 
+  const effectiveSubTime = currentTimeState + subtitleDelay;
+  const activeSubtitleCues = (selectedSubtitleTrack !== 'off' && subtitleCues.length > 0)
+    ? subtitleCues.filter((c) => effectiveSubTime >= c.start && effectiveSubTime <= c.end)
+    : [];
+
   return (
     <div
       ref={containerRef}
       className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center select-none overflow-hidden"
       onMouseMove={resetControlsTimeout}
+      onTouchStart={resetControlsTimeout}
+      onTouchMove={resetControlsTimeout}
+      onClick={resetControlsTimeout}
     >
-      {/* Video Container */}
-      <div
-        onClick={handlePlayerAreaClick}
-        className="relative w-full h-full bg-black flex items-center justify-center cursor-pointer"
-      >
-        <video
-          ref={videoRef}
-          onTimeUpdate={handleVideoTimeUpdate}
-          onLoadedMetadata={(e) => {
-            if (e.currentTarget.duration) setDurationState(e.currentTarget.duration);
-          }}
-          onPlay={() => setPlaying(true)}
-          onPause={() => setPlaying(false)}
-          className={`w-full h-full object-contain pointer-events-none ${
-            playerMode === 'hls' ? 'block' : 'hidden'
-          }`}
-          playsInline
-          autoPlay
-        />
-
-        {playerMode === 'embed' && (
+      {/* Video Container & Touch Zones */}
+      <div className="relative w-full h-full bg-black flex items-center justify-center overflow-hidden">
+        {directStreamUrl && (directStreamUrl.includes("embed") || directStreamUrl.includes("vidsrc") || directStreamUrl.includes("2embed")) ? (
           <iframe
-            src={embedUrl || `https://vidsrc.me/embed/anime?mal=${activeAnime.malId || activeAnime.id}&ep=${epNum}`}
-            title="Craftnime In-App Player"
+            src={directStreamUrl}
             allowFullScreen
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            className="w-full h-full border-0 bg-black"
+            allow="autoplay; fullscreen; encrypted-media"
+            className="w-full h-full border-0 z-10"
+            onLoad={() => setIsLoadingStream(false)}
+          />
+        ) : (
+          <video
+            ref={videoRef}
+            poster="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1' height='1'></svg>"
+            style={{ backgroundColor: '#000000' }}
+            onTimeUpdate={handleVideoTimeUpdate}
+            onWaiting={() => setIsBuffering(true)}
+            onLoadedMetadata={(e) => {
+              const v = e.currentTarget;
+              if (v.duration && isFinite(v.duration) && v.duration > 300) {
+                setDurationState(v.duration);
+              } else {
+                const fallback = activeAnime.duration ? activeAnime.duration * 60 : 1440;
+                setDurationState(fallback);
+              }
+              if (v.textTracks?.[0] && selectedSubtitleTrack !== 'off') {
+                v.textTracks[0].mode = 'showing';
+              }
+            }}
+            onLoadedData={() => {
+              setIsLoadingStream(false);
+              setIsBuffering(false);
+              if (videoRef.current?.textTracks?.[0] && selectedSubtitleTrack !== 'off') {
+                videoRef.current.textTracks[0].mode = 'showing';
+              }
+            }}
+            onPlaying={() => {
+              setIsLoadingStream(false);
+              setIsBuffering(false);
+            }}
+            onCanPlay={() => {
+              setIsLoadingStream(false);
+              setIsBuffering(false);
+            }}
+            onSeeking={() => setIsLoadingStream(true)}
+            onSeeked={() => {
+              setIsLoadingStream(false);
+              setIsBuffering(false);
+            }}
+            onPlay={() => setPlaying(true)}
+            onPause={() => setPlaying(false)}
+            className="w-full h-full object-contain pointer-events-none block bg-black"
+            playsInline
+            autoPlay
+            crossOrigin="anonymous"
           />
         )}
 
-        {/* Loading Overlay */}
+        {/* 3-Zone Touch & Double-Tap Seeking Layer */}
+        <div className="absolute inset-0 z-10 flex">
+          {/* Left Zone: 30% width -> Double Tap: -seekStep */}
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              handleZoneClick('left');
+            }}
+            className="w-[30%] h-full cursor-pointer relative"
+          >
+            {doubleTapFeedback === 'left' && (
+              <div className="absolute inset-0 flex items-center justify-center bg-white/10 rounded-r-full animate-in fade-in zoom-in duration-200">
+                <div className="flex flex-col items-center gap-1 text-white">
+                  <RotateCcw className="w-10 h-10 animate-spin" />
+                  <span className="font-mono text-xs font-bold bg-black/75 px-2.5 py-1 rounded-md border border-white/20">-{seekStep}s</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Center Zone: 40% width -> Single Tap: Toggle HUD */}
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              handleZoneClick('center');
+            }}
+            className="w-[40%] h-full cursor-pointer"
+          />
+
+          {/* Right Zone: 30% width -> Double Tap: +seekStep */}
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              handleZoneClick('right');
+            }}
+            className="w-[30%] h-full cursor-pointer relative"
+          >
+            {doubleTapFeedback === 'right' && (
+              <div className="absolute inset-0 flex items-center justify-center bg-white/10 rounded-l-full animate-in fade-in zoom-in duration-200">
+                <div className="flex flex-col items-center gap-1 text-white">
+                  <RotateCw className="w-10 h-10 animate-spin" />
+                  <span className="font-mono text-xs font-bold bg-black/75 px-2.5 py-1 rounded-md border border-white/20">+{seekStep}s</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Netflix-Style Center Floating Quick Controls (Mobile & Desktop) */}
+        <div
+          className={`absolute inset-0 pointer-events-none z-20 flex items-center justify-center gap-8 sm:gap-14 transition-opacity duration-300 ${
+            showControls && !isLoadingStream && !streamError ? 'opacity-100' : 'opacity-0'
+          }`}
+        >
+          {/* Rewind seekStep */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              seekRelative(-seekStep);
+              resetControlsTimeout();
+            }}
+            className="p-3.5 sm:p-4 rounded-full bg-black/40 hover:bg-black/70 backdrop-blur-xl text-white border border-white/20 shadow-2xl hover:scale-110 active:scale-95 transition-all pointer-events-auto cursor-pointer"
+            title={`Rewind ${seekStep} seconds`}
+          >
+            <RotateCcw className="w-6 h-6 sm:w-7 sm:h-7" />
+          </button>
+
+          {/* Center Large Play / Pause Button - Sleek Translucent Frosted Glass */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              togglePlay();
+            }}
+            className="p-5 sm:p-6 rounded-full bg-black/45 hover:bg-black/75 backdrop-blur-xl text-white border border-white/25 shadow-2xl hover:scale-110 active:scale-95 transition-all pointer-events-auto cursor-pointer"
+            title={isPlaying ? 'Pause' : 'Play'}
+          >
+            {isPlaying ? (
+              <Pause className="w-8 h-8 sm:w-10 sm:h-10 fill-white" />
+            ) : (
+              <Play className="w-8 h-8 sm:w-10 sm:h-10 fill-white translate-x-0.5" />
+            )}
+          </button>
+
+          {/* Forward seekStep */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              seekRelative(seekStep);
+              resetControlsTimeout();
+            }}
+            className="p-3.5 sm:p-4 rounded-full bg-black/40 hover:bg-black/70 backdrop-blur-xl text-white border border-white/20 shadow-2xl hover:scale-110 active:scale-95 transition-all pointer-events-auto cursor-pointer"
+            title={`Forward ${seekStep} seconds`}
+          >
+            <RotateCw className="w-6 h-6 sm:w-7 sm:h-7" />
+          </button>
+        </div>
+
+        {/* Stremio-Style Swarm & Buffer Monitor Loading Overlay */}
         {isLoadingStream && (
-          <div className="absolute inset-0 bg-black/85 flex flex-col items-center justify-center gap-3 z-20 pointer-events-none">
-            <RefreshCw className="w-8 h-8 text-crafted-brand-rust animate-spin" />
-            <p className="text-sm font-mono text-crafted-text-dim">
-              Loading 1080p stream for {activeAnime.title?.english || activeAnime.title?.romaji}...
-            </p>
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/92 z-30 space-y-5 p-6 animate-in fade-in duration-300">
+            {/* Animated Radar Pulse Loader */}
+            <div className="relative flex items-center justify-center">
+              <div className="w-20 h-20 rounded-full border-2 border-crafted-brand-rust/30 animate-ping absolute" />
+              <div className="w-14 h-14 rounded-full border-3 border-crafted-brand-rust border-t-transparent animate-spin" />
+              <Zap className="w-6 h-6 text-crafted-brand-rust absolute animate-pulse" />
+            </div>
+
+            {/* Anime & Episode Title */}
+            <div className="text-center space-y-1 max-w-lg">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-crafted-panel border border-crafted-border text-[11px] font-mono text-crafted-brand-rustLight font-bold">
+                <span>EPISODE {activeEpisode?.number || 1}</span>
+                <span>•</span>
+                <span>{audioTrack.toUpperCase()}</span>
+              </div>
+              <h3 className="text-base sm:text-lg font-bold text-white truncate">
+                {activeAnime.title?.english || activeAnime.title?.romaji}
+              </h3>
+            </div>
+
+            {/* Dynamic Status Readout (Stremio Standard) */}
+            <div className="bg-crafted-surface/90 border border-crafted-border rounded-2xl px-5 py-3.5 max-w-md w-full shadow-2xl text-center space-y-2">
+              <p className="text-xs font-mono font-bold text-white tracking-wide">
+                {torrentInfo ? '⚡ Swarm Stream (P2P Torrentio)' : '⚡ Direct Master HLS Stream'}
+              </p>
+              <p className="text-[11px] font-mono text-crafted-text-dim animate-pulse">
+                {loadingStatusText}
+              </p>
+
+              {torrentInfo && (
+                <div className="flex items-center justify-center gap-4 pt-1 text-[11px] font-mono text-crafted-brand-rustLight border-t border-crafted-border/50">
+                  <span>👤 Peers: <strong className="text-emerald-400">{p2pStats?.numPeers || torrentInfo.seeders || 'Connecting...'}</strong></span>
+                  <span>📥 Speed: <strong className="text-emerald-400">{p2pStats && p2pStats.downloadSpeed > 0 ? `${(p2pStats.downloadSpeed / 1024 / 1024).toFixed(2)} MB/s` : 'Buffering...'}</strong></span>
+                </div>
+              )}
+            </div>
+
+            {/* Quick Stream Switching Buttons */}
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (activeAnime) {
+                    openStreamSelector(activeAnime, activeEpisode || undefined);
+                  }
+                }}
+                className="px-4 py-2 rounded-xl bg-crafted-panel hover:bg-crafted-border text-white text-xs font-mono border border-crafted-border transition-colors cursor-pointer flex items-center gap-2"
+              >
+                <List className="w-3.5 h-3.5 text-crafted-brand-rust" />
+                <span>Select Different Stream</span>
+              </button>
+            </div>
           </div>
         )}
 
-        {/* Double-Tap Feedback Animation */}
-        {doubleTapFeedback && (
+        {/* In-Playback Buffering Pill */}
+        {isBuffering && !isLoadingStream && (
+          <div className="absolute top-20 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-full bg-black/80 backdrop-blur-md border border-crafted-brand-rust/50 text-white font-mono text-xs flex items-center gap-2 shadow-2xl animate-pulse">
+            <div className="w-3 h-3 border-2 border-crafted-brand-rust border-t-transparent rounded-full animate-spin" />
+            <span>Buffering stream... {p2pStats && p2pStats.downloadSpeed > 0 ? `${(p2pStats.downloadSpeed / 1024 / 1024).toFixed(1)} MB/s` : ''}</span>
+          </div>
+        )}
+
+        {/* Stream Error Notice */}
+        {streamError && !isLoadingStream && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 z-30 space-y-4 p-6 text-center">
+            <div className="max-w-md space-y-2">
+              <p className="text-sm font-bold text-rose-400 font-mono">Stream Loading Failed</p>
+              <p className="text-xs text-crafted-text-dim font-mono break-all">{streamError}</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setAudioTrack(audioTrack === "dub" ? "sub" : "dub");
+                }}
+                className="px-4 py-2 rounded-xl bg-crafted-brand-rust text-white text-xs font-mono font-bold cursor-pointer hover:brightness-110 shadow-lg"
+              >
+                Switch to {audioTrack === "dub" ? "SUB" : "DUB"}
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  closePlayer();
+                }}
+                className="px-4 py-2 rounded-xl bg-crafted-surface text-white text-xs border border-crafted-border hover:bg-crafted-panel cursor-pointer"
+              >
+                Close Player
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 80% MAL Scrobbled Badge Notice */}
+        {scrobbledNotice && (
+          <div className="absolute top-20 right-8 z-30 px-4 py-2 rounded-xl bg-emerald-950/90 text-emerald-300 font-mono text-xs border border-emerald-500/40 shadow-2xl flex items-center gap-2 animate-in fade-in">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            <span>Watched & Scrobbled to MAL</span>
+          </div>
+        )}
+
+        {/* High-Visibility Custom Subtitle Overlay (Stremio Standard - Instant Sync on Seek) */}
+        {selectedSubtitleTrack !== 'off' && activeSubtitleCues.length > 0 && (
           <div
-            className={`absolute top-1/2 -translate-y-1/2 flex items-center justify-center px-6 py-4 rounded-2xl bg-black/70 border border-white/20 text-white font-mono font-bold text-sm backdrop-blur-md animate-in zoom-in-90 duration-200 pointer-events-none ${
-              doubleTapFeedback.side === 'left' ? 'left-16' : 'right-16'
-            }`}
+            className="absolute left-0 right-0 z-20 pointer-events-none flex flex-col items-center justify-center px-6 transition-all duration-150 select-none"
+            style={{
+              bottom: showControls ? `${88 + subtitleOffsetVertical}px` : `${28 + subtitleOffsetVertical}px`,
+            }}
           >
-            {doubleTapFeedback.side === 'left' ? `« ${seekStep}s` : `${seekStep}s »`}
+            {activeSubtitleCues.map((cue, idx) => (
+              <div
+                key={idx}
+                className="text-center font-sans font-bold leading-snug max-w-4xl px-3 py-1 select-none"
+                style={{
+                  fontSize: `${Math.round(22 * (subtitleSize / 100))}px`,
+                  color: '#FFFFFF',
+                  textShadow:
+                    '-2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, -1px 0 0 #000, 1px 0 0 #000, 0 -1px 0 #000, 0 1px 0 #000, 0 3px 8px rgba(0, 0, 0, 0.95)',
+                }}
+              >
+                {cue.text.split('\n').map((line, lIdx) => (
+                  <span key={lIdx} className="block">
+                    {line}
+                  </span>
+                ))}
+              </div>
+            ))}
           </div>
         )}
       </div>
 
-      {/* MAL 80% Auto-Scrobble Badge */}
-      {scrobbledNotice && (
-        <div className="absolute top-20 right-8 z-30 flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-crafted-panel/95 border border-crafted-brand-lightViolet/60 text-crafted-text shadow-2xl backdrop-blur-md animate-in slide-in-from-top-4 duration-300">
-          <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-          <div className="text-xs">
-            <span className="font-bold text-white">MyAnimeList & AniList Synced!</span>
-            <p className="text-crafted-text-dim text-[11px]">
-              Episode {epNum} scrobbled to your cloud account
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* AniSkip Intro / Outro action buttons */}
-      {showAniSkipIntroPill && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            if (videoRef.current && skipIntroInterval) {
-              videoRef.current.currentTime = skipIntroInterval.endTime;
-              setCurrentTimeState(skipIntroInterval.endTime);
-            }
-          }}
-          className="absolute bottom-28 right-8 z-30 flex items-center gap-2 px-4 py-2 rounded-xl bg-crafted-brand-rust text-white font-bold text-xs shadow-crafted-glow hover:brightness-110 cursor-pointer animate-in fade-in"
-        >
-          <FastForward className="w-4 h-4" />
-          <span>Skip Opening</span>
-        </button>
-      )}
-
-      {showAniSkipOutroPill && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            if (videoRef.current && skipOutroInterval) {
-              videoRef.current.currentTime = skipOutroInterval.endTime;
-              setCurrentTimeState(skipOutroInterval.endTime);
-            }
-          }}
-          className="absolute bottom-28 right-8 z-30 flex items-center gap-2 px-4 py-2 rounded-xl bg-crafted-brand-violet text-white font-bold text-xs shadow-crafted-glow hover:brightness-110 cursor-pointer animate-in fade-in"
-        >
-          <FastForward className="w-4 h-4" />
-          <span>Skip Ending</span>
-        </button>
-      )}
-
       {/* Top Header Overlay Bar */}
       <div
-        className={`absolute top-0 left-0 right-0 p-4 sm:p-6 bg-gradient-to-b from-black/95 via-black/60 to-transparent flex items-center justify-between z-30 transition-opacity duration-300 ${
+        className={`absolute top-0 left-0 right-0 p-4 sm:p-6 bg-gradient-to-b from-black/90 via-black/40 to-transparent flex items-center justify-between z-30 transition-opacity duration-300 ${
           showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
       >
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-3">
           <button
             onClick={closePlayer}
-            className="p-2 rounded-xl bg-crafted-surface/80 hover:bg-crafted-surface text-crafted-text hover:text-white border border-crafted-border transition-colors cursor-pointer shrink-0"
+            className="p-2 rounded-xl bg-black/60 hover:bg-crafted-brand-rust text-white border border-white/10 transition-colors cursor-pointer"
           >
-            <X className="w-5 h-5" />
+            <ChevronLeft className="w-5 h-5" />
           </button>
-          <div className="min-w-0">
-            <h3 className="text-sm sm:text-base font-bold text-white truncate font-serif">
-              {activeAnime.title?.english || activeAnime.title?.romaji || 'Anime Playback'}
-            </h3>
-            <p className="text-xs text-crafted-text-dim truncate font-mono">
-              Episode {epNum} • {selectedQuality} • ({audioTrack.toUpperCase()})
-            </p>
+
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2.5">
+              <h3 className="text-sm sm:text-base font-bold text-white truncate max-w-xs sm:max-w-md">
+                {activeAnime.title?.english || activeAnime.title?.romaji}
+              </h3>
+              {torrentInfo && (
+                <div className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 text-[10px] font-mono shadow-md">
+                  <Zap className="w-3 h-3 fill-emerald-400 text-emerald-400" />
+                  <span>P2P Direct • {torrentInfo.releaseGroup} ({p2pStats?.numPeers || torrentInfo.seeders} peers)</span>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2 text-xs font-mono text-crafted-brand-rustLight">
+              <span>Episode {epNum}</span>
+              <span>•</span>
+              <span className="text-crafted-text-dim truncate">
+                {(activeEpisode?.title || `Episode ${epNum}`).replace(/^Episode \d+:\s*/, '')}
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* Top Right Controls */}
-        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          {/* Sub / Dub Audio Switcher */}
-          <div className="flex items-center p-1 rounded-xl bg-crafted-surface/80 border border-crafted-border">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              if (activeAnime && activeEpisode) {
+                openStreamSelector(activeAnime, activeEpisode);
+              }
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-crafted-panel hover:bg-crafted-surface text-white text-xs font-mono font-bold border border-crafted-border hover:border-crafted-brand-rust transition-all cursor-pointer shadow-md"
+            title="Switch Torrent Release / Seeders (Torrentio)"
+          >
+            <Zap className="w-3.5 h-3.5 text-emerald-400 fill-emerald-400" />
+            <span className="hidden sm:inline">Streams</span>
+          </button>
+
+          {torrentInfo && (
+            <>
+              <button
+                onClick={openInMpv}
+                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-crafted-panel hover:bg-crafted-surface text-white text-xs font-mono font-bold border border-crafted-border hover:border-crafted-brand-rust shadow-lg transition-all cursor-pointer"
+                title="Optional: Open stream in external MPV window"
+              >
+                <Tv className="w-3.5 h-3.5" />
+                <span>Open in MPV</span>
+              </button>
+              <div className="sm:hidden flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 text-[10px] font-mono">
+                <Zap className="w-3.5 h-3.5 fill-emerald-400" />
+                <span>{p2pStats?.numPeers || torrentInfo.seeders}P</span>
+              </div>
+            </>
+          )}
+          <button
+            onClick={closePlayer}
+            className="p-2 rounded-xl bg-black/60 hover:bg-rose-500 text-white border border-white/10 transition-colors cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Bottom Controls Bar */}
+      <div
+        className={`absolute bottom-0 left-0 right-0 p-4 sm:p-6 bg-gradient-to-t from-black/95 via-black/60 to-transparent space-y-3 z-30 transition-opacity duration-300 ${
+          showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}
+      >
+        {/* Scrubber Progress Bar */}
+        <div className="flex items-center gap-3 text-xs font-mono text-white">
+          <span>{formatTime(currentTimeState)}</span>
+          <input
+            type="range"
+            min={0}
+            max={durationState || 100}
+            value={currentTimeState}
+            onChange={handleSeek}
+            className="w-full accent-crafted-brand-rust h-1.5 rounded-lg bg-white/20 cursor-pointer"
+          />
+          <span>{formatTime(durationState)}</span>
+        </div>
+
+        {/* Buttons Control Row */}
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          {/* Left Playback Group */}
+          <div className="flex items-center gap-2">
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setAudioTrack('sub');
-              }}
-              className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
-                audioTrack === 'sub'
-                  ? 'bg-crafted-brand-rust text-white shadow-crafted-glow'
-                  : 'text-crafted-text-dim hover:text-white'
-              }`}
+              onClick={playPreviousEpisode}
+              className="p-2 text-white hover:text-crafted-brand-rust transition-colors cursor-pointer"
+              title="Previous Episode"
             >
-              SUB
+              <SkipBack className="w-5 h-5" />
             </button>
+
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setAudioTrack('dub');
-              }}
-              className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
-                audioTrack === 'dub'
-                  ? 'bg-crafted-brand-lightViolet text-white shadow-crafted-glow'
-                  : 'text-crafted-text-dim hover:text-white'
-              }`}
+              onClick={() => seekRelative(-seekStep)}
+              className="px-2 py-1 text-xs font-mono text-crafted-text-dim hover:text-white transition-colors cursor-pointer"
             >
-              DUB
+              -{seekStep}s
             </button>
+
+            <button
+              onClick={togglePlay}
+              className="w-10 h-10 rounded-full bg-crafted-button text-white flex items-center justify-center shadow-crafted-glow hover:scale-105 transition-transform cursor-pointer"
+            >
+              {isPlaying ? <Pause className="w-5 h-5 fill-white" /> : <Play className="w-5 h-5 fill-white ml-0.5" />}
+            </button>
+
+            <button
+              onClick={() => seekRelative(seekStep)}
+              className="px-2 py-1 text-xs font-mono text-crafted-text-dim hover:text-white transition-colors cursor-pointer"
+            >
+              +{seekStep}s
+            </button>
+
+            {/* Dedicated Anime OP/ED 90-Second Skip Button */}
+            <button
+              onClick={() => seekRelative(90)}
+              className="px-2.5 py-1 text-xs font-mono font-bold text-white bg-crafted-brand-rust/30 hover:bg-crafted-brand-rust border border-crafted-brand-rust/50 rounded-lg transition-all cursor-pointer shadow-sm flex items-center gap-1.5"
+              title="Skip 90s (Anime Opening/Ending)"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-crafted-brand-rustLight" />
+              <span>+90s</span>
+            </button>
+
+            <button
+              onClick={playNextEpisode}
+              className="p-2 text-white hover:text-crafted-brand-rust transition-colors cursor-pointer"
+              title="Next Episode"
+            >
+              <SkipForward className="w-5 h-5" />
+            </button>
+
+            {/* Volume Control */}
+            <div className="flex items-center gap-2 ml-2">
+              <button onClick={toggleMute} className="text-white hover:text-crafted-brand-rust cursor-pointer">
+                {isMuted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+              </button>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={isMuted ? 0 : volume}
+                onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                className="w-16 accent-crafted-brand-rust h-1 bg-white/20 rounded cursor-pointer hidden sm:block"
+              />
+            </div>
           </div>
 
-          {/* Quality Switcher */}
-          {playerMode === 'hls' && (
+          {/* Right Extras Group */}
+          <div className="flex items-center gap-2">
+            {/* CC Subtitles Button & Popover */}
+            <div className="relative">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowSubtitlesDrawer(!showSubtitlesDrawer);
+                }}
+                className={`px-3 py-1 rounded-xl flex items-center gap-1.5 border text-xs font-mono font-bold transition-colors cursor-pointer ${
+                  selectedSubtitleTrack !== 'off'
+                    ? 'bg-crafted-brand-rust text-white border-crafted-brand-rust shadow-md'
+                    : 'bg-crafted-surface/80 hover:bg-crafted-surface text-crafted-text-dim border-crafted-border'
+                }`}
+                title="Subtitle Tracks (CC)"
+              >
+                <Subtitles className="w-3.5 h-3.5" />
+                <span>CC</span>
+              </button>
+
+              {/* Subtitles Popover Menu (Stremio Subtitles Menu Standard) */}
+              {showSubtitlesDrawer && (
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  className="absolute bottom-12 right-0 w-80 max-h-[80vh] bg-crafted-panel/95 border border-crafted-border rounded-2xl shadow-2xl p-4 z-50 backdrop-blur-xl animate-in fade-in zoom-in-95 flex flex-col space-y-3"
+                >
+                  {/* Header */}
+                  <div className="flex items-center justify-between pb-2 border-b border-crafted-border shrink-0">
+                    <span className="text-xs font-bold text-white font-mono flex items-center gap-1.5">
+                      <Subtitles className="w-3.5 h-3.5 text-crafted-brand-rust" />
+                      <span>Subtitles (CC) • {availableSubtitles.length} Tracks</span>
+                    </span>
+                    <button
+                      onClick={() => setShowSubtitlesDrawer(false)}
+                      className="text-crafted-text-dim hover:text-white p-0.5 rounded cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Search Bar */}
+                  {availableSubtitles.length > 4 && (
+                    <div className="shrink-0">
+                      <input
+                        type="text"
+                        placeholder="Filter languages (e.g. English, Spanish)..."
+                        value={subtitleSearch}
+                        onChange={(e) => setSubtitleSearch(e.target.value)}
+                        className="w-full bg-crafted-surface/90 text-white text-[11px] font-mono px-3 py-1.5 rounded-xl border border-crafted-border focus:border-crafted-brand-rust focus:outline-none placeholder-crafted-text-dim/60"
+                      />
+                    </div>
+                  )}
+
+                  {/* Track Selection (Scrollable) */}
+                  <div className="flex-1 max-h-44 overflow-y-auto pr-1 space-y-1 text-xs font-mono custom-scrollbar">
+                    <span className="text-[10px] text-crafted-text-dim font-bold block uppercase tracking-wider sticky top-0 bg-crafted-panel/95 py-0.5 z-10">
+                      Track Selection
+                    </span>
+                    {availableSubtitles
+                      .filter(
+                        (s) =>
+                          !subtitleSearch ||
+                          s.label.toLowerCase().includes(subtitleSearch.toLowerCase()) ||
+                          s.lang.toLowerCase().includes(subtitleSearch.toLowerCase())
+                      )
+                      .map((sub) => (
+                        <button
+                          key={sub.id}
+                          onClick={() => {
+                            enableSubtitles(sub.id);
+                          }}
+                          className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left transition-all cursor-pointer ${
+                            selectedSubtitleTrack === sub.id
+                              ? 'bg-crafted-brand-rust text-white font-bold shadow-sm'
+                              : 'text-crafted-text hover:bg-crafted-surface'
+                          }`}
+                        >
+                          <span className="truncate pr-2">{sub.label}</span>
+                          {selectedSubtitleTrack === sub.id && <Check className="w-3.5 h-3.5 shrink-0 text-white" />}
+                        </button>
+                      ))}
+                    <button
+                      onClick={() => {
+                        enableSubtitles('off');
+                      }}
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left transition-all cursor-pointer ${
+                        selectedSubtitleTrack === 'off'
+                          ? 'bg-crafted-brand-rust text-white font-bold shadow-sm'
+                          : 'text-crafted-text-dim hover:bg-crafted-surface'
+                      }`}
+                    >
+                      <span>Off</span>
+                      {selectedSubtitleTrack === 'off' && <Check className="w-3.5 h-3.5 shrink-0 text-white" />}
+                    </button>
+                  </div>
+
+                  {/* Subtitle Delay / Offset Stepper (Stremio Standard) */}
+                  {selectedSubtitleTrack !== 'off' && (
+                    <div className="shrink-0 space-y-2.5 pt-2 border-t border-crafted-border">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-crafted-text-dim text-[11px] font-mono font-bold">Subtitle Delay</span>
+                          <button
+                            onClick={() => setSubtitleDelay(0)}
+                            className="text-[10px] font-mono text-crafted-brand-rust hover:underline cursor-pointer"
+                          >
+                            Reset (0.0s)
+                          </button>
+                        </div>
+                        <div className="flex items-center justify-between bg-crafted-surface rounded-xl p-1 border border-crafted-border">
+                          <button
+                            onClick={() => setSubtitleDelay((d) => Math.round((d - 0.1) * 10) / 10)}
+                            className="px-3 py-1 text-xs font-mono font-bold text-white hover:bg-crafted-panel rounded-lg cursor-pointer transition-colors"
+                            title="Delay -0.1s"
+                          >
+                            -0.1s
+                          </button>
+                          <span className="text-xs font-mono font-bold text-crafted-brand-rustLight">
+                            {subtitleDelay > 0 ? `+${subtitleDelay.toFixed(1)}s` : `${subtitleDelay.toFixed(1)}s`}
+                          </span>
+                          <button
+                            onClick={() => setSubtitleDelay((d) => Math.round((d + 0.1) * 10) / 10)}
+                            className="px-3 py-1 text-xs font-mono font-bold text-white hover:bg-crafted-panel rounded-lg cursor-pointer transition-colors"
+                            title="Delay +0.1s"
+                          >
+                            +0.1s
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Subtitle Size Selector (Stremio Standard) */}
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-crafted-text-dim text-[11px] font-mono font-bold">Subtitle Size</span>
+                          <span className="text-[10px] font-mono text-crafted-brand-rustLight font-bold">{subtitleSize}%</span>
+                        </div>
+                        <div className="grid grid-cols-4 gap-1">
+                          {[75, 100, 125, 150].map((sz) => (
+                            <button
+                              key={sz}
+                              onClick={() => setSubtitleSize(sz)}
+                              className={`py-1 rounded-lg text-[11px] font-mono font-bold border transition-all cursor-pointer ${
+                                subtitleSize === sz
+                                  ? 'bg-crafted-brand-rust text-white border-crafted-brand-rust shadow-sm'
+                                  : 'bg-crafted-surface text-crafted-text border-crafted-border hover:bg-crafted-panel'
+                              }`}
+                            >
+                              {sz}%
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Vertical Position */}
+                      <div className="space-y-1">
+                        <span className="text-crafted-text-dim text-[11px] font-mono font-bold block">Position</span>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <button
+                            onClick={() => setSubtitleOffsetVertical(0)}
+                            className={`py-1 rounded-lg text-[11px] font-mono font-bold border transition-all cursor-pointer ${
+                              subtitleOffsetVertical === 0
+                                ? 'bg-crafted-brand-rust text-white border-crafted-brand-rust shadow-sm'
+                                : 'bg-crafted-surface text-crafted-text border-crafted-border hover:bg-crafted-panel'
+                            }`}
+                          >
+                            Normal
+                          </button>
+                          <button
+                            onClick={() => setSubtitleOffsetVertical(28)}
+                            className={`py-1 rounded-lg text-[11px] font-mono font-bold border transition-all cursor-pointer ${
+                              subtitleOffsetVertical === 28
+                                ? 'bg-crafted-brand-rust text-white border-crafted-brand-rust shadow-sm'
+                                : 'bg-crafted-surface text-crafted-text border-crafted-border hover:bg-crafted-panel'
+                            }`}
+                          >
+                            Raised (+28px)
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Quality Switcher */}
             <div className="flex items-center p-1 rounded-xl bg-crafted-surface/80 border border-crafted-border">
               <Tv className="w-3.5 h-3.5 text-crafted-brand-rust ml-1.5 hidden sm:inline" />
               <select
                 value={selectedQuality}
-                onChange={(e) => {
-                  e.stopPropagation();
-                  handleQualityChange(e.target.value);
-                }}
+                onChange={(e) => handleQualityChange(e.target.value)}
                 className="bg-transparent text-crafted-text text-xs font-mono px-2 py-0.5 focus:outline-none cursor-pointer"
               >
                 {availableQualities.map((q) => (
@@ -599,47 +1300,33 @@ export const VideoPlayerModal: React.FC = () => {
                 ))}
               </select>
             </div>
-          )}
 
-          {/* Player Mode Switcher */}
-          <div className="flex items-center p-1 rounded-xl bg-crafted-surface/80 border border-crafted-border">
-            <Server className="w-3.5 h-3.5 text-crafted-brand-rust ml-1.5 hidden sm:inline" />
-            <select
-              value={playerMode}
-              onChange={(e) => {
-                e.stopPropagation();
-                setPlayerMode(e.target.value as any);
-              }}
-              className="bg-transparent text-crafted-text text-xs font-mono px-2 py-0.5 focus:outline-none cursor-pointer"
+            {/* Settings Trigger */}
+            <button
+              onClick={() => setShowSettingsDrawer(!showSettingsDrawer)}
+              className="p-2 rounded-xl bg-crafted-surface/80 hover:bg-crafted-surface text-crafted-text hover:text-white border border-crafted-border transition-colors cursor-pointer"
+              title="Player Settings"
             >
-              <option value="hls" className="bg-crafted-surface text-white">Direct HLS (Native 1080p)</option>
-              <option value="embed" className="bg-crafted-surface text-white">Stream Embed Mirror</option>
-            </select>
+              <Settings className="w-4 h-4" />
+            </button>
+
+            {/* Episode List Trigger */}
+            <button
+              onClick={() => setShowEpisodeDrawer(!showEpisodeDrawer)}
+              className="p-2 rounded-xl bg-crafted-surface/80 hover:bg-crafted-surface text-crafted-text hover:text-white border border-crafted-border transition-colors cursor-pointer"
+              title="Episode Matrix"
+            >
+              <List className="w-4 h-4" />
+            </button>
+
+            {/* Fullscreen Toggle */}
+            <button
+              onClick={toggleFullscreen}
+              className="p-2 rounded-xl bg-crafted-surface/80 hover:bg-crafted-surface text-crafted-text hover:text-white border border-crafted-border transition-colors cursor-pointer"
+            >
+              {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+            </button>
           </div>
-
-          {/* Settings Drawer Trigger */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowSettingsDrawer(!showSettingsDrawer);
-            }}
-            className="p-2 rounded-xl bg-crafted-surface/80 hover:bg-crafted-surface text-crafted-text hover:text-white border border-crafted-border transition-colors cursor-pointer"
-            title="Player Settings"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
-
-          {/* Episode List Trigger */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowEpisodeDrawer(!showEpisodeDrawer);
-            }}
-            className="p-2 rounded-xl bg-crafted-surface/80 hover:bg-crafted-surface text-crafted-text hover:text-white border border-crafted-border transition-colors cursor-pointer"
-            title="Episode Matrix"
-          >
-            <List className="w-4 h-4" />
-          </button>
         </div>
       </div>
 
@@ -658,58 +1345,45 @@ export const VideoPlayerModal: React.FC = () => {
 
           <div className="space-y-4 text-xs">
             <div className="space-y-1.5">
-              <label className="text-crafted-text-dim font-mono block">Double-Tap / Arrow Seek Step</label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => setSeekStep(5)}
-                  className={`py-2 rounded-lg font-mono font-bold border transition-all cursor-pointer ${
-                    seekStep === 5
-                      ? 'bg-crafted-brand-rust text-white border-crafted-brand-rust shadow-crafted-glow'
-                      : 'bg-crafted-surface text-crafted-text border-crafted-border'
-                  }`}
-                >
-                  5 Seconds
-                </button>
-                <button
-                  onClick={() => setSeekStep(10)}
-                  className={`py-2 rounded-lg font-mono font-bold border transition-all cursor-pointer ${
-                    seekStep === 10
-                      ? 'bg-crafted-brand-rust text-white border-crafted-brand-rust shadow-crafted-glow'
-                      : 'bg-crafted-surface text-crafted-text border-crafted-border'
-                  }`}
-                >
-                  10 Seconds
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-crafted-text-dim font-mono block">Default Resolution</label>
-              <div className="grid grid-cols-2 gap-2">
-                {availableQualities.map((q) => (
+              <label className="text-crafted-text-dim font-mono block">Seek Step (Skip Buttons)</label>
+              <div className="grid grid-cols-4 gap-1.5">
+                {[5, 10, 15, 30].map((step) => (
                   <button
-                    key={q}
-                    onClick={() => handleQualityChange(q)}
+                    key={step}
+                    onClick={() => setSeekStep(step)}
                     className={`py-2 rounded-lg font-mono font-bold border transition-all cursor-pointer ${
-                      selectedQuality === q
-                        ? 'bg-crafted-brand-lightViolet text-white border-crafted-brand-lightViolet shadow-crafted-glow'
-                        : 'bg-crafted-surface text-crafted-text border-crafted-border'
+                      seekStep === step
+                        ? 'bg-crafted-brand-rust text-white border-crafted-brand-rust shadow-crafted-glow'
+                        : 'bg-crafted-surface text-crafted-text border-crafted-border hover:border-white/20'
                     }`}
                   >
-                    {q}
+                    {step}s
                   </button>
                 ))}
               </div>
+            </div>
+
+            <div className="pt-2 border-t border-crafted-border">
+              <button
+                onClick={() => {
+                  setShowSettingsDrawer(false);
+                  useSettingsStore.getState().openSettings();
+                }}
+                className="w-full py-2.5 px-3 rounded-xl bg-crafted-surface hover:bg-crafted-panel border border-crafted-border hover:border-crafted-brand-rust text-white text-xs font-mono font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md"
+              >
+                <Settings className="w-4 h-4 text-crafted-brand-rustLight" />
+                <span>Open Full Settings</span>
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Episode Matrix Drawer */}
+      {/* Episode Drawer */}
       {showEpisodeDrawer && (
-        <div className="absolute right-0 top-0 bottom-0 w-80 sm:w-96 bg-crafted-panel/95 border-l border-crafted-border z-40 p-4 flex flex-col backdrop-blur-xl animate-in slide-in-from-right">
-          <div className="flex items-center justify-between pb-3 border-b border-crafted-border">
-            <h4 className="text-sm font-bold font-serif text-white">Episodes Matrix</h4>
+        <div className="absolute right-0 top-0 bottom-0 w-80 sm:w-96 bg-crafted-panel/95 border-l border-crafted-border z-40 flex flex-col backdrop-blur-xl animate-in slide-in-from-right">
+          <div className="flex items-center justify-between p-4 border-b border-crafted-border">
+            <h4 className="text-sm font-bold font-serif text-white">Episodes ({episodeList.length})</h4>
             <button
               onClick={() => setShowEpisodeDrawer(false)}
               className="p-1 text-crafted-text-dim hover:text-white cursor-pointer"
@@ -717,159 +1391,42 @@ export const VideoPlayerModal: React.FC = () => {
               <X className="w-4 h-4" />
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto py-3 space-y-2">
-            {episodeList.map((ep) => (
-              <div
-                key={ep.id}
-                onClick={() => {
-                  playEpisode(ep);
-                  setShowEpisodeDrawer(false);
-                }}
-                className={`flex items-center gap-2.5 p-2 rounded-xl border transition-all cursor-pointer ${
-                  activeEpisode?.number === ep.number
-                    ? 'bg-crafted-brand-rust/20 border-crafted-brand-rust text-white'
-                    : 'bg-crafted-bg/60 border-crafted-border hover:bg-crafted-surface text-crafted-text-muted hover:text-white'
-                }`}
-              >
-                <img
-                  src={ep.thumbnail}
-                  alt=""
-                  referrerPolicy="no-referrer"
-                  className="w-16 aspect-video rounded object-cover shrink-0"
-                />
-                <div className="flex-1 min-w-0">
-                  <span className="text-[10px] font-mono text-crafted-brand-rustLight font-bold">
-                    EP {ep.number}
-                  </span>
-                  <p className="text-xs truncate">{(ep.title || '').replace(/^Episode \d+:\s*/, '')}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
-      {/* Bottom Controls Bar for Direct HLS Stream */}
-      {playerMode === 'hls' && (
-        <div
-          className={`absolute bottom-0 left-0 right-0 p-4 sm:p-6 bg-gradient-to-t from-black/95 via-black/70 to-transparent flex flex-col gap-3 z-30 transition-opacity duration-300 ${
-            showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
-          }`}
-        >
-          {/* Progress Seekbar */}
-          <div className="w-full flex items-center gap-3">
-            <span className="text-xs font-mono text-crafted-text-dim w-10 text-right">
-              {formatTime(currentTimeState)}
-            </span>
-            <input
-              type="range"
-              min={0}
-              max={durationState || 100}
-              value={currentTimeState}
-              onChange={handleSeek}
-              className="flex-1 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-crafted-brand-rust hover:h-2 transition-all"
-            />
-            <span className="text-xs font-mono text-crafted-text-dim w-10">
-              {formatTime(durationState)}
-            </span>
-          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-2">
+            {episodeList.map((ep) => {
+              const isCurrent = ep.number === activeEpisode?.number;
+              const isWatched = isEpisodeWatched(activeAnime.id, ep.number);
 
-          {/* Controls Strip */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  togglePlay();
-                }}
-                className="p-2 rounded-xl bg-crafted-button text-white shadow-crafted-glow hover:brightness-110 cursor-pointer"
-              >
-                {isPlaying ? <Pause className="w-4 h-4 fill-white" /> : <Play className="w-4 h-4 fill-white ml-0.5" />}
-              </button>
-
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  seekDelta(-seekStep);
-                }}
-                className="p-2 text-crafted-text-dim hover:text-white transition-colors cursor-pointer"
-                title={`Rewind ${seekStep}s`}
-              >
-                <SkipBack className="w-4 h-4" />
-              </button>
-
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  seekDelta(seekStep);
-                }}
-                className="p-2 text-crafted-text-dim hover:text-white transition-colors cursor-pointer"
-                title={`Forward ${seekStep}s`}
-              >
-                <SkipForward className="w-4 h-4" />
-              </button>
-
-              {/* Volume Slider */}
-              <div className="flex items-center gap-2 group">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleMute();
+              return (
+                <div
+                  key={ep.id}
+                  onClick={() => {
+                    playEpisode(ep);
+                    setShowEpisodeDrawer(false);
                   }}
-                  className="p-1.5 text-crafted-text-dim hover:text-white cursor-pointer"
+                  className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all cursor-pointer ${
+                    isCurrent
+                      ? 'bg-crafted-brand-rust text-white border-crafted-brand-rust shadow-crafted-glow'
+                      : isWatched
+                      ? 'bg-emerald-950/20 text-crafted-text-dim hover:text-white border-emerald-500/30'
+                      : 'bg-crafted-surface hover:bg-crafted-surface-hover text-crafted-text border-crafted-border'
+                  }`}
                 >
-                  {isMuted || volume === 0 ? (
-                    <VolumeX className="w-4 h-4 text-rose-400" />
-                  ) : (
-                    <Volume2 className="w-4 h-4" />
-                  )}
-                </button>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={isMuted ? 0 : volume}
-                  onChange={(e) => {
-                    const v = parseFloat(e.target.value);
-                    setVolume(v);
-                    if (videoRef.current) videoRef.current.volume = v;
-                  }}
-                  className="w-16 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-crafted-brand-rust hidden group-hover:block"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              {/* Playback Speed Switcher */}
-              <select
-                value={playbackSpeed}
-                onChange={(e) => {
-                  e.stopPropagation();
-                  const spd = parseFloat(e.target.value);
-                  setPlaybackSpeed(spd);
-                  if (videoRef.current) videoRef.current.playbackRate = spd;
-                }}
-                className="bg-crafted-surface text-crafted-text text-xs font-mono px-2 py-1 rounded-lg border border-crafted-border focus:outline-none cursor-pointer"
-              >
-                <option value={0.5}>0.5x</option>
-                <option value={1}>1.0x</option>
-                <option value={1.25}>1.25x</option>
-                <option value={1.5}>1.5x</option>
-                <option value={2}>2.0x</option>
-              </select>
-
-              {/* Fullscreen Button */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleFullscreen();
-                }}
-                className="p-2 rounded-xl bg-crafted-surface hover:bg-crafted-surface-hover text-crafted-text hover:text-white border border-crafted-border transition-colors cursor-pointer"
-              >
-                {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
-              </button>
-            </div>
+                  <img
+                    src={ep.thumbnail || activeAnime.bannerImage}
+                    alt=""
+                    referrerPolicy="no-referrer"
+                    className="w-16 aspect-video object-cover rounded-lg shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-[10px] font-mono block">Episode {ep.number}</span>
+                    <h5 className="text-xs font-semibold truncate">
+                      {(ep.title || `Episode ${ep.number}`).replace(/^Episode \d+:\s*/, '')}
+                    </h5>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

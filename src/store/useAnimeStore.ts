@@ -10,6 +10,7 @@ interface AnimeState {
   // Catalog State
   featuredBillboard: AnimeItem[];
   currentBillboardIndex: number;
+  newEpisodesList: AnimeItem[];
   trendingList: AnimeItem[];
   topAiringList: AnimeItem[];
   popularSeasonList: AnimeItem[];
@@ -46,13 +47,13 @@ interface AnimeState {
   searchAnime: (query: string, genre?: string) => Promise<void>;
   toggleWatchlist: (anime: AnimeItem) => void;
   isInWatchlist: (animeId: number) => boolean;
+  removeFromContinueWatching: (animeId: number) => void;
   recordWatchProgress: (
     anime: AnimeItem,
     episodeNumber: number,
     episodeTitle: string,
-    progressPercentage: number,
-    currentTime: number,
-    duration: number
+    currentTime?: number,
+    duration?: number
   ) => void;
 }
 
@@ -65,6 +66,7 @@ export const useAnimeStore = create<AnimeState>((set, get) => ({
 
   featuredBillboard: FEATURED_BILLBOARD_ANIME,
   currentBillboardIndex: 0,
+  newEpisodesList: [],
   trendingList: [],
   topAiringList: [],
   popularSeasonList: [],
@@ -87,7 +89,8 @@ export const useAnimeStore = create<AnimeState>((set, get) => ({
   fetchInitialCatalog: async () => {
     set({ isLoading: true });
     try {
-      const [trending, topAiring, seasonal] = await Promise.all([
+      const [newEpisodes, trending, topAiring, seasonal] = await Promise.all([
+        AniListService.getNewEpisodes(1, 24),
         AniListService.getTrending(1, 24),
         AniListService.getTopAiring(1, 10),
         AniListService.getSeasonal('WINTER', 2024, 1, 24),
@@ -97,6 +100,7 @@ export const useAnimeStore = create<AnimeState>((set, get) => ({
 
       set({
         featuredBillboard: liveBillboard,
+        newEpisodesList: newEpisodes,
         trendingList: trending,
         topAiringList: topAiring,
         popularSeasonList: seasonal,
@@ -161,12 +165,20 @@ export const useAnimeStore = create<AnimeState>((set, get) => ({
     get().applyBrowseFilters();
   },
 
-  setSelectedSeason: (season: string, year?: number) => {
+  setSelectedSeason: async (season: string, year?: number) => {
+    const targetYear = year || get().selectedSeasonYear;
     set({
       selectedSeason: season,
-      selectedSeasonYear: year || get().selectedSeasonYear,
+      selectedSeasonYear: targetYear,
+      isLoading: true,
     });
-    get().applyBrowseFilters();
+    try {
+      const seasonal = await AniListService.getSeasonal(season, targetYear, 1, 40);
+      set({ popularSeasonList: seasonal, isLoading: false });
+    } catch (e) {
+      console.error('Error fetching seasonal anime', e);
+      set({ isLoading: false });
+    }
   },
 
   setSelectedFormat: (format: string) => {
@@ -180,7 +192,7 @@ export const useAnimeStore = create<AnimeState>((set, get) => ({
   },
 
   applyBrowseFilters: async () => {
-    const { searchQuery, selectedGenre, selectedSeason, selectedSeasonYear, selectedFormat, selectedSort } = get();
+    const { searchQuery, selectedGenre, selectedFormat, selectedSort } = get();
     set({ isLoading: true });
 
     try {
@@ -188,13 +200,11 @@ export const useAnimeStore = create<AnimeState>((set, get) => ({
         {
           search: searchQuery,
           genre: selectedGenre,
-          season: selectedSeason,
-          seasonYear: selectedSeasonYear,
           format: selectedFormat,
           sort: selectedSort,
         },
         1,
-        30
+        40
       );
       set({ browseList: results, isLoading: false });
     } catch (e) {
@@ -234,16 +244,32 @@ export const useAnimeStore = create<AnimeState>((set, get) => ({
     return watchlist.some((a) => a.id === animeId);
   },
 
-  recordWatchProgress: (anime, episodeNumber, episodeTitle, _progressPercentage, _currentTime, _duration) => {
+  removeFromContinueWatching: (animeId: number) => {
+    const { continueWatchingList } = get();
+    const updatedList = continueWatchingList.filter((item) => item.id !== animeId);
+    localStorage.setItem(LOCAL_STORAGE_CONTINUE_KEY, JSON.stringify(updatedList));
+    set({ continueWatchingList: updatedList });
+  },
+
+  recordWatchProgress: (anime, episodeNumber, episodeTitle, currentTime = 0, duration = 0) => {
     const { continueWatchingList } = get();
     const filtered = continueWatchingList.filter((item) => item.id !== anime.id);
 
-    const updatedItem: AnimeItem = {
+    const progressPercent =
+      duration > 0 ? Math.min(100, Math.round((currentTime / duration) * 100)) : 0;
+
+    const updatedItem: any = {
       ...anime,
-      description: `Watched Episode ${episodeNumber}: ${episodeTitle}`,
+      description: `Episode ${episodeNumber}: ${episodeTitle}`,
+      lastWatchedEpisodeNumber: episodeNumber,
+      lastWatchedEpisodeTitle: episodeTitle,
+      currentTime: Math.round(currentTime),
+      duration: Math.round(duration),
+      progressPercent,
+      updatedAt: Date.now(),
     };
 
-    const updatedList = [updatedItem, ...filtered].slice(0, 15);
+    const updatedList = [updatedItem, ...filtered].slice(0, 25);
     localStorage.setItem(LOCAL_STORAGE_CONTINUE_KEY, JSON.stringify(updatedList));
     set({ continueWatchingList: updatedList });
   },

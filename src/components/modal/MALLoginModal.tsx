@@ -2,11 +2,11 @@ import React, { useState } from 'react';
 import {
   X,
   Sparkles,
-  CheckCircle2,
-  Lock,
   LogOut,
   RefreshCw,
-  ExternalLink,
+  User,
+  Shield,
+  ArrowRight,
 } from 'lucide-react';
 import { useMALStore } from '../../store/useMALStore';
 import { Badge } from '../common/Badge';
@@ -27,39 +27,32 @@ export const MALLoginModal: React.FC = () => {
 
   const [usernameInput, setUsernameInput] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
-  const [isAuthorizing, setIsAuthorizing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isLoginModalOpen) return null;
 
-  const handleMALOAuth = async () => {
+  const handleConnect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanUser = usernameInput.trim();
+    if (!cleanUser) {
+      setErrorMessage('Please enter your MyAnimeList username.');
+      return;
+    }
+
     setErrorMessage('');
-    setIsAuthorizing(true);
+    setIsSubmitting(true);
     try {
-      if (typeof window !== 'undefined' && (window as any).require) {
-        const { ipcRenderer } = (window as any).require('electron');
-        const res = await ipcRenderer.invoke('open-mal-oauth');
-        if (res?.success && res?.username) {
-          const ok = await loginMAL(res.username);
-          if (!ok) setErrorMessage('Failed to fetch MyAnimeList profile.');
-        }
+      const ok = await loginMAL(cleanUser);
+      if (ok) {
+        setUsernameInput('');
+        toggleLoginModal(false);
       } else {
-        window.open('https://myanimelist.net/login.php', '_blank', 'width=650,height=720');
+        setErrorMessage(`Could not find or load MyAnimeList public library for "${cleanUser}". Please ensure the username is spelled correctly.`);
       }
     } catch (e) {
-      console.warn('MAL OAuth failed', e);
+      setErrorMessage('Connection error occurred. Please try again.');
     } finally {
-      setIsAuthorizing(false);
-    }
-  };
-
-  const handleUsernameSync = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!usernameInput.trim()) return;
-    setErrorMessage('');
-
-    const ok = await loginMAL(usernameInput.trim());
-    if (!ok) {
-      setErrorMessage(`Could not connect MyAnimeList account for "${usernameInput}". Please verify your username on myanimelist.net`);
+      setIsSubmitting(false);
     }
   };
 
@@ -81,11 +74,11 @@ export const MALLoginModal: React.FC = () => {
               <Sparkles className="w-4 h-4" />
             </span>
             <h3 className="text-lg font-bold font-serif text-white">
-              {user.isLoggedIn ? 'MyAnimeList Account Sync' : 'Connect MyAnimeList Account'}
+              {user.isLoggedIn ? 'MyAnimeList Account Sync' : 'Connect MyAnimeList'}
             </h3>
           </div>
           <p className="text-xs text-crafted-text-dim">
-            Official MyAnimeList Direct Cloud Sync & Real-Time Scrobbling
+            Direct Cloud Sync across Watching, Completed, Dropped & Plan to Watch
           </p>
         </div>
 
@@ -97,7 +90,7 @@ export const MALLoginModal: React.FC = () => {
                 src={user.avatarUrl}
                 alt=""
                 referrerPolicy="no-referrer"
-                className="w-14 h-14 rounded-xl object-cover border-2 border-crafted-brand-rust shadow-crafted-glow"
+                className="w-14 h-14 rounded-xl object-cover border-2 border-crafted-brand-rust"
               />
               <div className="flex-1 min-w-0 space-y-0.5">
                 <div className="flex items-center gap-2">
@@ -162,76 +155,55 @@ export const MALLoginModal: React.FC = () => {
             </div>
           </div>
         ) : (
-          /* Sign In Form */
-          <div className="space-y-4">
-            <button
-              type="button"
-              onClick={handleMALOAuth}
-              disabled={isAuthorizing}
-              className="w-full py-2.5 px-4 rounded-xl bg-crafted-button text-white font-bold text-xs flex items-center justify-between shadow-crafted-glow hover:brightness-110 transition-all disabled:opacity-50 cursor-pointer"
-            >
-              <span className="flex items-center gap-2">
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>Sign In with MyAnimeList (Official Window)</span>
-              </span>
-              <span className="text-[10px] font-mono bg-black/30 px-2 py-0.5 rounded">MAL Auth</span>
-            </button>
+          /* Direct Universal Username Form */
+          <form onSubmit={handleConnect} className="space-y-4">
+            <p className="text-xs text-crafted-text-muted leading-relaxed">
+              Enter your MyAnimeList username to synchronize all your completed anime, watching progress, and categories without needing external popups.
+            </p>
 
-            <div className="relative flex py-1 items-center">
-              <div className="flex-grow border-t border-crafted-border" />
-              <span className="flex-shrink mx-3 text-[10px] font-mono text-crafted-text-dim uppercase">
-                Or Connect by Username
-              </span>
-              <div className="flex-grow border-t border-crafted-border" />
-            </div>
-
-            <form onSubmit={handleUsernameSync} className="space-y-3">
-              <div className="space-y-1">
+            <div className="space-y-1.5">
+              <label className="text-xs font-mono text-crafted-text-dim block">
+                MyAnimeList Username
+              </label>
+              <div className="relative">
+                <User className="w-4 h-4 text-crafted-brand-rust absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={usernameInput}
                   onChange={(e) => setUsernameInput(e.target.value)}
-                  placeholder="Enter your MyAnimeList username..."
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-crafted-bg border border-crafted-border text-crafted-text text-xs focus:outline-none focus:border-crafted-brand-rust"
-                  required
+                  placeholder="e.g. Aditya0973"
+                  className="w-full pl-10 pr-4 py-2.5 text-xs rounded-xl bg-crafted-bg border border-crafted-border text-crafted-text placeholder:text-crafted-text-dim focus:outline-none focus:border-crafted-brand-rust font-mono"
+                  autoFocus
                 />
               </div>
+            </div>
 
-              {errorMessage && (
-                <p className="text-xs text-rose-400 font-mono bg-rose-500/10 p-2 rounded-lg border border-rose-500/20">
-                  {errorMessage}
-                </p>
-              )}
+            {errorMessage && (
+              <p className="text-xs text-rose-400 font-mono bg-rose-500/10 p-2.5 rounded-lg border border-rose-500/20">
+                {errorMessage}
+              </p>
+            )}
 
-              <button
-                type="submit"
-                disabled={isSyncing}
-                className="w-full py-2.5 rounded-xl bg-crafted-surface hover:bg-crafted-surface-hover text-white font-semibold text-xs flex items-center justify-center gap-2 border border-crafted-border disabled:opacity-50 cursor-pointer"
-              >
-                {isSyncing ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Syncing MAL Watchlist...</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-3.5 h-3.5 text-crafted-brand-rust" />
-                    <span>Sync All 6 MAL Categories</span>
-                  </>
-                )}
-              </button>
-            </form>
+            <button
+              type="submit"
+              disabled={isSubmitting || isSyncing}
+              className="w-full py-3 px-4 rounded-xl bg-crafted-button text-white font-bold text-xs flex items-center justify-center gap-2 shadow-crafted-glow hover:brightness-110 transition-all disabled:opacity-50 cursor-pointer"
+            >
+              <RefreshCw className={`w-4 h-4 ${isSubmitting || isSyncing ? 'animate-spin' : ''}`} />
+              <span>{isSubmitting || isSyncing ? 'Connecting & Syncing...' : 'Connect & Import Library'}</span>
+              <ArrowRight className="w-4 h-4 ml-1" />
+            </button>
 
-            <div className="p-3 rounded-xl bg-crafted-panel/40 border border-crafted-border text-[11px] text-crafted-text-dim space-y-1">
+            <div className="p-3.5 rounded-xl bg-crafted-panel/40 border border-crafted-border text-[11px] text-crafted-text-dim space-y-1.5">
               <div className="flex items-center gap-1.5 text-crafted-brand-rustLight font-semibold">
-                <Lock className="w-3.5 h-3.5" />
-                <span>Zero External Database Required</span>
+                <Shield className="w-3.5 h-3.5" />
+                <span>Instant Two-Way Cloud Synchronization</span>
               </div>
               <p>
-                Your Currently Watching, Completed, On Hold, Dropped, and Plan to Watch lists sync directly from MyAnimeList and are cached in local storage.
+                Compatible with all Android, Linux, and Windows platforms. Pulls all 390+ library entries directly.
               </p>
             </div>
-          </div>
+          </form>
         )}
       </div>
     </div>

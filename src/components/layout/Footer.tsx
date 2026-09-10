@@ -1,6 +1,6 @@
 import React from 'react';
 import { Logo } from '../common/Logo';
-import { Heart, Shield, Film, Cpu, Radio, Sparkles } from 'lucide-react';
+import { Heart, Shield, Film, Radio, Sparkles } from 'lucide-react';
 
 export const Footer: React.FC = () => {
   return (
@@ -12,10 +12,6 @@ export const Footer: React.FC = () => {
           <p className="text-xs text-crafted-text-muted leading-relaxed">
             The flagship anime streaming and tracking suite for the Crafted Co. ecosystem. High-framerate 1080p playback, instant AniSkip, and native MAL auto-scrobbling.
           </p>
-          <div className="flex items-center gap-2 text-xs font-mono text-crafted-text-dim">
-            <Cpu className="w-3.5 h-3.5 text-crafted-brand-lightViolet" />
-            <span>RTX 4060 GPU Accelerated</span>
-          </div>
         </div>
 
         {/* Col 2: Integrations */}
@@ -74,8 +70,7 @@ export const Footer: React.FC = () => {
           </p>
           <div className="pt-2 flex items-center gap-1.5 text-[11px] text-crafted-text-dim">
             <span>Crafted with</span>
-            <Heart className="w-3.5 h-3.5 fill-crafted-brand-rust text-crafted-brand-rust inline" />
-            <span>by Crafted Co. Engineers</span>
+            <Heart className="w-3.5 h-3.5 fill-rose-500 text-rose-500 inline" />
           </div>
         </div>
       </div>

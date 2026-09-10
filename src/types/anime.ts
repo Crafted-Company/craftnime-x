@@ -54,7 +54,10 @@ export interface AnimeEpisode {
   hasDub?: boolean;
   hasSub?: boolean;
   airDate?: string;
+  airDateUtc?: string;
   description?: string;
+  isAired?: boolean;
+  releaseDateFormatted?: string;
 }
 
 export interface AnimeItem {
@@ -90,6 +93,8 @@ export interface AnimeItem {
   };
   spotlightVideoUrl?: string;
   tagline?: string;
+  updatedAt?: number;
+  lastWatchedAt?: number;
 }
 
 export interface ContinueWatchingItem {

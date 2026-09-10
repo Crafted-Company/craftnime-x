@@ -1,7 +1,20 @@
-const { app, BrowserWindow, shell, session, ipcMain } = require('electron');
+const { app, BrowserWindow, shell, session, ipcMain, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { exec } = require('child_process');
+
+process.on('uncaughtException', (err) => {
+  if (err.code === 'EPIPE' || err.message?.includes('EPIPE') || err.message?.includes('write')) {
+    return; // Ignore pipe disconnect errors from media streaming
+  }
+  console.error('Unhandled Exception:', err);
+});
+
+// Enable GPU & Video Hardware Acceleration (Stremio & MPV standards)
+app.commandLine.appendSwitch('enable-features', 'VaapiVideoDecoder,PlatformHEVCDecoderSupport,CanvasOopRasterization');
+app.commandLine.appendSwitch('enable-gpu-rasterization');
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+app.commandLine.appendSwitch('enable-zero-copy');
 
 let mainWindow = null;
 
@@ -28,7 +41,7 @@ function createWindow() {
     minWidth: 960,
     minHeight: 600,
     title: 'Craftnime',
-    backgroundColor: '#1B1515',
+    backgroundColor: '#120D0D',
     icon: path.join(__dirname, '../public/Craftnime.png'),
     webPreferences: {
       nodeIntegration: true,
@@ -92,7 +105,50 @@ function createWindow() {
   });
 }
 
-// IPC Handler to resolve live anime stream
+const torrentServer = require('./torrentServer.cjs');
+const mpvBridge = require('./mpvBridge.cjs');
+torrentServer.initHttpServer(8888);
+
+// IPC Handlers for Sequential Torrent Streaming
+ipcMain.handle('start-torrent-stream', async (event, { magnet, fileIdx }) => {
+  try {
+    const res = await torrentServer.startTorrent(magnet, fileIdx);
+    return res;
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('stop-torrent-stream', async () => {
+  torrentServer.stopTorrent();
+  mpvBridge.stopMpvPlayer();
+  return { success: true };
+});
+
+ipcMain.handle('get-torrent-stats', async () => {
+  return torrentServer.getStats();
+});
+
+// IPC Handlers for Native MPV Player Engine (Stremio & Miru standard)
+ipcMain.handle('launch-mpv-player', async (event, { streamUrl, animeTitle, episodeTitle }) => {
+  return mpvBridge.startMpvPlayer(streamUrl, animeTitle, episodeTitle, (evt) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('mpv-event', evt);
+    }
+  });
+});
+
+ipcMain.handle('stop-mpv-player', async () => {
+  mpvBridge.stopMpvPlayer();
+  return { success: true };
+});
+
+ipcMain.handle('send-mpv-command', async (event, { command }) => {
+  mpvBridge.sendMpvCommand(command);
+  return { success: true };
+});
+
+// Fallback IPC Handler to resolve live anime stream via script
 ipcMain.handle('resolve-anime-stream', async (event, { title, episodeNumber, audioLanguage }) => {
   return new Promise((resolve) => {
     const scriptPath = getExecutableScriptPath();
@@ -130,7 +186,7 @@ ipcMain.handle('open-mal-oauth', async () => {
       parent: mainWindow,
       modal: true,
       title: 'Sign In to MyAnimeList',
-      backgroundColor: '#1B1515',
+      backgroundColor: '#120D0D',
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -158,6 +214,38 @@ ipcMain.handle('open-mal-oauth', async () => {
       resolve({ success: false, username: null });
     });
   });
+});
+
+// IPC Handler for Two-Way MAL Cloud Scrobble Push
+ipcMain.handle('update-mal-remote-status', async (event, { malAnimeId, numWatchedEpisodes, status }) => {
+  try {
+    const cookies = await session.defaultSession.cookies.get({ domain: 'myanimelist.net' });
+    const cookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+
+    const malStatusVal = status === 'completed' ? 2 : 1;
+    const postBody = JSON.stringify({
+      anime_id: malAnimeId,
+      status: malStatusVal,
+      num_watched_episodes: numWatchedEpisodes,
+    });
+
+    const response = await net.fetch('https://myanimelist.net/ownlist/anime/edit.json', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: cookieHeader,
+        Referer: `https://myanimelist.net/anime/${malAnimeId}`,
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      },
+      body: postBody,
+    });
+
+    return { success: response.ok };
+  } catch (err) {
+    console.warn('Electron update-mal-remote-status error:', err);
+    return { success: false, error: err.message };
+  }
 });
 
 app.whenReady().then(() => {

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { MALUserProfile, AnimeItem } from '../types/anime';
 import { AccountSyncService } from '../services/accountSync';
+import { useWatchedStore } from './useWatchedStore';
 
 interface MALState {
   user: MALUserProfile;
@@ -81,6 +82,9 @@ export const useMALStore = create<MALState>((set, get) => ({
         localStorage.setItem('craftnime_mal_onhold', JSON.stringify(data.lists.onHold));
         localStorage.setItem('craftnime_mal_dropped', JSON.stringify(data.lists.dropped));
         localStorage.setItem('craftnime_mal_plan', JSON.stringify(data.lists.planToWatch));
+
+        // Sync completed and in-progress episodes into local watched store
+        useWatchedStore.getState().syncFromMALList(data.lists.completed, data.lists.watching);
 
         set({
           user: userProf,

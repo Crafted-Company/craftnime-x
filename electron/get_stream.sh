@@ -27,6 +27,20 @@ QUERY=$(printf '%s' "$TITLE" | tr ' ' '+')
 PAGE=$(anidb_curl "https://anidb.app/browse?q=${QUERY}")
 ANIME_SLUG=$(printf '%s' "$PAGE" | sed -nE 's|.*anime/([a-z0-9-]+-[0-9]+)".*|\1|p' | head -n 1)
 
+# Fallback 1: Try without punctuation
+if [ -z "$ANIME_SLUG" ]; then
+  CLEAN_TITLE=$(printf '%s' "$TITLE" | sed 's/[^a-zA-Z0-9 ]/ /g' | tr -s ' ' | tr ' ' '+')
+  PAGE=$(anidb_curl "https://anidb.app/browse?q=${CLEAN_TITLE}")
+  ANIME_SLUG=$(printf '%s' "$PAGE" | sed -nE 's|.*anime/([a-z0-9-]+-[0-9]+)".*|\1|p' | head -n 1)
+fi
+
+# Fallback 2: Try main title before colon
+if [ -z "$ANIME_SLUG" ]; then
+  MAIN_TITLE=$(printf '%s' "$TITLE" | cut -d':' -f1 | cut -d'-' -f1 | tr ' ' '+')
+  PAGE=$(anidb_curl "https://anidb.app/browse?q=${MAIN_TITLE}")
+  ANIME_SLUG=$(printf '%s' "$PAGE" | sed -nE 's|.*anime/([a-z0-9-]+-[0-9]+)".*|\1|p' | head -n 1)
+fi
+
 if [ -z "$ANIME_SLUG" ]; then
   echo "ERROR:Anime not found"
   exit 1

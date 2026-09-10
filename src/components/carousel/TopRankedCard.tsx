@@ -18,7 +18,7 @@ export const TopRankedCard: React.FC<TopRankedCardProps> = ({ anime, rank }) => 
     anime.coverImage?.extraLarge ||
     anime.coverImage?.large ||
     anime.coverImage?.medium ||
-    'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx151807-33nNwsEadAiT.jpg';
+    'https://media.kitsu.app/anime/poster_images/11469/large.jpg';
 
   return (
     <div
@@ -36,6 +36,10 @@ export const TopRankedCard: React.FC<TopRankedCardProps> = ({ anime, rank }) => 
           src={posterUrl}
           alt={anime.title.english || anime.title.romaji}
           loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={(e) => {
+            (e.target as HTMLImageElement).src = 'https://media.kitsu.app/anime/poster_images/11469/large.jpg';
+          }}
           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
         />
 
@@ -49,8 +53,8 @@ export const TopRankedCard: React.FC<TopRankedCardProps> = ({ anime, rank }) => 
           )}
         </div>
 
-        {/* Hover Action Overlay */}
-        <div className="absolute inset-0 bg-black/65 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-2.5 gap-1.5 backdrop-blur-[2px]">
+        {/* Hover Action Overlay (Desktop Only - Mobile taps open Details Page) */}
+        <div className="absolute inset-0 bg-black/65 opacity-0 group-hover:opacity-100 transition-opacity duration-300 hidden md:flex flex-col justify-end p-2.5 gap-1.5 backdrop-blur-[2px] pointer-events-none group-hover:pointer-events-auto">
           <p className="text-xs font-bold text-white line-clamp-1">
             {anime.title.english || anime.title.romaji}
           </p>
@@ -60,7 +64,7 @@ export const TopRankedCard: React.FC<TopRankedCardProps> = ({ anime, rank }) => 
                 e.stopPropagation();
                 openPlayer(anime);
               }}
-              className="flex-1 py-1.5 rounded-lg bg-crafted-button text-white text-[11px] font-bold flex items-center justify-center gap-1 shadow-crafted-glow"
+              className="flex-1 py-1.5 rounded-lg bg-crafted-button text-white text-[11px] font-bold flex items-center justify-center gap-1 shadow-crafted-glow cursor-pointer"
             >
               <Play className="w-3.5 h-3.5 fill-white" />
               <span>Play</span>
@@ -70,7 +74,7 @@ export const TopRankedCard: React.FC<TopRankedCardProps> = ({ anime, rank }) => 
                 e.stopPropagation();
                 toggleWatchlist(anime);
               }}
-              className="p-1.5 rounded-lg bg-black/60 text-white border border-white/20 hover:border-crafted-brand-rust"
+              className="p-1.5 rounded-lg bg-black/60 text-white border border-white/20 hover:border-crafted-brand-rust cursor-pointer"
             >
               {inWatchlist ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Plus className="w-3.5 h-3.5" />}
             </button>
