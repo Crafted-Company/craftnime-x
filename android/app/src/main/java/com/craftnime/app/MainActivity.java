@@ -70,6 +70,19 @@ public class MainActivity extends BridgeActivity {
             settings.setBlockNetworkImage(false);
             settings.setLoadsImagesAutomatically(true);
 
+            settings.setAllowUniversalAccessFromFileURLs(true);
+            settings.setAllowFileAccessFromFileURLs(true);
+            settings.setSupportMultipleWindows(true);
+            settings.setJavaScriptCanOpenWindowsAutomatically(true);
+            settings.setUserAgentString("Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36");
+
+            webView.setWebChromeClient(new android.webkit.WebChromeClient() {
+                @Override
+                public android.graphics.Bitmap getDefaultVideoPoster() {
+                    return android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888);
+                }
+            });
+
             webView.setWebViewClient(new com.getcapacitor.BridgeWebViewClient(bridge) {
                 @Override
                 public void onReceivedSslError(WebView view, android.webkit.SslErrorHandler handler, android.net.http.SslError error) {

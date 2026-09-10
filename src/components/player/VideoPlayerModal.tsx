@@ -182,14 +182,12 @@ export const VideoPlayerModal: React.FC = () => {
     }
   }, [isPlaying]);
 
-  // Device orientation: Force landscape mode when player is open, restore portrait on exit
+  // Device orientation: Follow user's orientation, lock landscape on fullscreen only
   useEffect(() => {
     if (isPlayerOpen) {
       try {
-        if ((window as any).AndroidOrientationBridge?.setLandscape) {
-          (window as any).AndroidOrientationBridge.setLandscape();
-        } else if (screen.orientation && (screen.orientation as any).lock) {
-          (screen.orientation as any).lock('landscape').catch(() => {});
+        if ((window as any).AndroidOrientationBridge?.setUnspecified) {
+          (window as any).AndroidOrientationBridge.setUnspecified();
         }
       } catch {}
     } else {
@@ -638,10 +636,24 @@ export const VideoPlayerModal: React.FC = () => {
 
   const toggleFullscreen = () => {
     if (!containerRef.current) return;
-    if (!document.fullscreenElement) {
-      containerRef.current.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
+    if (!document.fullscreenElement && !isFullscreen) {
+      setIsFullscreen(true);
+      try {
+        if ((window as any).AndroidOrientationBridge?.setLandscape) {
+          (window as any).AndroidOrientationBridge.setLandscape();
+        }
+      } catch {}
+      containerRef.current.requestFullscreen().catch(() => {});
     } else {
-      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {});
+      setIsFullscreen(false);
+      try {
+        if ((window as any).AndroidOrientationBridge?.setUnspecified) {
+          (window as any).AndroidOrientationBridge.setUnspecified();
+        }
+      } catch {}
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
     }
   };
 
@@ -671,12 +683,12 @@ export const VideoPlayerModal: React.FC = () => {
     >
       {/* Video Container & Touch Zones */}
       <div className="relative w-full h-full bg-black flex items-center justify-center overflow-hidden">
-        {directStreamUrl && (directStreamUrl.includes("embed") || directStreamUrl.includes("vidsrc") || directStreamUrl.includes("2embed")) ? (
+        {directStreamUrl && (directStreamUrl.includes("embed") || directStreamUrl.includes("vidsrc") || directStreamUrl.includes("2embed") || directStreamUrl.includes("vidlink")) ? (
           <iframe
             src={directStreamUrl}
             allowFullScreen
-            allow="autoplay; fullscreen; encrypted-media"
-            className="w-full h-full border-0 z-10"
+            allow="autoplay; fullscreen; encrypted-media; picture-in-picture; accelerometer; gyroscope"
+            className="w-full h-full border-0 z-10 bg-black"
             onLoad={() => setIsLoadingStream(false)}
           />
         ) : (

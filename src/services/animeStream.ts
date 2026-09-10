@@ -274,10 +274,10 @@ export class AnimeStreamService {
   ): Promise<AnimeStreamResult> {
     const cleanTitle = encodeURIComponent(animeTitle.replace(/[^a-zA-Z0-9 ]/g, ' ').trim());
     
-    // Resilient universal embeds
+    // Resilient multi-provider embeds (Tested & active)
     const fallbackEmbed = malId
-      ? `https://vidsrc.cc/v2/embed/anime/mal/${malId}/${episodeNumber}`
-      : `https://vidsrc.me/embed/anime?q=${cleanTitle}&ep=${episodeNumber}`;
+      ? `https://vidlink.pro/anime/mal/${malId}/${episodeNumber}`
+      : `https://www.2embed.cc/embed/anime/${cleanTitle}/${episodeNumber}`;
 
     // 1. Prioritize MegaPlay Direct Decrypted Stream (Dango Engine)
     if (malId) {
