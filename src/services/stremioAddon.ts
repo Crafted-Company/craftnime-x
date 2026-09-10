@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { AnimeItem } from '../types/anime';
+import { detectSeasonMarker } from './titleMatching';
 
 export interface StremioStream {
   name: string;
@@ -314,26 +315,44 @@ export class StremioAddonService {
       }
     }
 
-    // 2. Strict Season check
-    const otherSeasons = [1, 2, 3, 4, 5, 6, 7, 8, 9].filter((s) => s !== seasonNum);
-    for (const s of otherSeasons) {
-      const sPad = s < 10 ? `0${s}` : `${s}`;
-      if (
-        (tLower.includes(`season ${s}`) ||
-          tLower.includes(`season ${sPad}`) ||
-          tLower.includes(`s${sPad}e`) ||
-          tLower.includes(`s${s}e`) ||
-          tLower.includes(`s${sPad} `) ||
-          tLower.includes(` ${s}nd season`) ||
-          tLower.includes(` ${s}rd season`) ||
-          tLower.includes(` ${s}th season`)) &&
-        !aLower.includes(`season ${s}`)
-      ) {
+    // 2. Dango-grade Season Marker validation (e.g. S3 for S1 rejection)
+    const detectedSeason = detectSeasonMarker(torrentTitle);
+    if (detectedSeason) {
+      const detectedNum = parseInt(detectedSeason, 10);
+      if (detectedNum && detectedNum !== seasonNum) {
         return false;
       }
     }
 
-    // 3. Target episode matching
+    // 3. Strict Season check against other seasons
+    const otherSeasons = [1, 2, 3, 4, 5, 6, 7, 8, 9].filter((s) => s !== seasonNum);
+    for (const s of otherSeasons) {
+      const sPad = s < 10 ? `0${s}` : `${s}`;
+      const patterns = [
+        `season ${s}`,
+        `season ${sPad}`,
+        `s${sPad}e`,
+        `s${s}e`,
+        `s${sPad} `,
+        `s${s} `,
+        `s${sPad}-`,
+        `s${s}-`,
+        `s${sPad} -`,
+        `s${s} -`,
+        ` ${s}nd season`,
+        ` ${s}rd season`,
+        ` ${s}th season`,
+        ` ${s}st season`,
+        `(${s}nd season)`,
+        `(${s}rd season)`,
+        `(${s}th season)`,
+      ];
+      if (patterns.some((p) => tLower.includes(p)) && !aLower.includes(`season ${s}`)) {
+        return false;
+      }
+    }
+
+    // 4. Target episode matching
     const epNumStr = `${episodeNum}`;
     const epPadStr = episodeNum < 10 ? `0${episodeNum}` : `${episodeNum}`;
     const epPatterns = [

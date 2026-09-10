@@ -105,7 +105,7 @@ export const VideoPlayerModal: React.FC = () => {
       const tracks = await SubtitleService.fetchAvailableTracks(activeAnime, activeEpisode?.number);
       if (isMounted && tracks.length > 0) {
         setAvailableSubtitles(tracks);
-        const preferred = tracks.find((t) => t.isDefault) || tracks[0];
+        const preferred = tracks.find((t) => t.isDefault && t.url) || tracks.find((t) => t.url) || tracks[0];
         if (preferred) {
           setSelectedSubtitleTrack(preferred.id);
         }
@@ -334,13 +334,23 @@ export const VideoPlayerModal: React.FC = () => {
               setLoadingStatusText('Direct master HLS connected.');
               if (webRes.subtitles && webRes.subtitles.length > 0) {
                 const newSubs = webRes.subtitles.map((s, idx) => ({
-                  id: `stream-sub-${idx}`,
+                  id: s.url || `stream-sub-${idx}`,
                   label: s.label || s.lang,
                   lang: s.lang,
-                  isDefault: s.isDefault,
+                  isDefault: s.isDefault ?? (s.lang === 'en' || s.lang === 'eng' || idx === 0),
                   url: s.url,
                 }));
-                setAvailableSubtitles((prev) => [...prev, ...newSubs]);
+                setAvailableSubtitles((prev) => {
+                  const existingUrls = new Set(prev.map((p) => p.url).filter(Boolean));
+                  const unique = newSubs.filter((n) => n.url && !existingUrls.has(n.url));
+                  const base = prev.filter((p) => p.url);
+                  const combined = [...unique, ...base];
+                  return combined.length > 0 ? combined : prev;
+                });
+                const defaultTrack = newSubs.find((s) => s.isDefault || s.lang === 'en' || s.lang === 'eng') || newSubs[0];
+                if (defaultTrack && defaultTrack.url) {
+                  setSelectedSubtitleTrack(defaultTrack.id);
+                }
               }
             } else {
               setStreamError('Could not resolve stream source for this episode.');
@@ -355,13 +365,23 @@ export const VideoPlayerModal: React.FC = () => {
             setLoadingStatusText('Direct master HLS connected.');
             if (webRes.subtitles && webRes.subtitles.length > 0) {
               const newSubs = webRes.subtitles.map((s, idx) => ({
-                id: `stream-sub-${idx}`,
+                id: s.url || `stream-sub-${idx}`,
                 label: s.label || s.lang,
                 lang: s.lang,
-                isDefault: s.isDefault,
+                isDefault: s.isDefault ?? (s.lang === 'en' || s.lang === 'eng' || idx === 0),
                 url: s.url,
               }));
-              setAvailableSubtitles((prev) => [...prev, ...newSubs]);
+              setAvailableSubtitles((prev) => {
+                const existingUrls = new Set(prev.map((p) => p.url).filter(Boolean));
+                const unique = newSubs.filter((n) => n.url && !existingUrls.has(n.url));
+                const base = prev.filter((p) => p.url);
+                const combined = [...unique, ...base];
+                return combined.length > 0 ? combined : prev;
+              });
+              const defaultTrack = newSubs.find((s) => s.isDefault || s.lang === 'en' || s.lang === 'eng') || newSubs[0];
+              if (defaultTrack && defaultTrack.url) {
+                setSelectedSubtitleTrack(defaultTrack.id);
+              }
             }
           } else if (webRes.embedUrl) {
             setDirectStreamUrl(webRes.embedUrl);

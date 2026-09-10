@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { AnimeItem, AnimeEpisode } from '../types/anime';
 import { KitsuService } from './kitsu';
+import { AniScheduleService } from './aniSchedule';
 
 const ANILIST_GRAPHQL_URL = 'https://graphql.anilist.co';
 
@@ -151,7 +152,16 @@ export class AniListService {
     return MASTER_CURATED_CATALOG;
   }
 
-  static async getNewEpisodes(page = 1, perPage = 24): Promise<AnimeItem[]> {
+  static async getNewEpisodes(_page = 1, perPage = 24): Promise<AnimeItem[]> {
+    try {
+      const liveReleases = await AniScheduleService.getLatestReleases(perPage);
+      if (liveReleases && liveReleases.length > 0) {
+        return liveReleases;
+      }
+    } catch (e) {
+      console.warn('AniSchedule live feed fallback:', e);
+    }
+
     const query = `
       query ($page: Int, $perPage: Int) {
         Page(page: $page, perPage: $perPage) {
@@ -164,7 +174,7 @@ export class AniListService {
     try {
       const res = await axios.post(
         ANILIST_GRAPHQL_URL,
-        { query, variables: { page, perPage } },
+        { query, variables: { page: _page, perPage } },
         { timeout: 5000 }
       );
       const media = res.data?.data?.Page?.media;

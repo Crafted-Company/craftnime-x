@@ -24,7 +24,7 @@ import { AniListService } from '../../services/anilist';
 import { AniZipService, AniZipEpisode } from '../../services/aniZip';
 import { KitsuService } from '../../services/kitsu';
 import { Badge } from '../common/Badge';
-import { AnimeEpisode, AnimeRelation } from '../../types/anime';
+import { AnimeEpisode, AnimeRelation, AnimeItem } from '../../types/anime';
 
 type TabType = 'episodes' | 'characters' | 'relations' | 'overview';
 
@@ -235,6 +235,29 @@ export const AnimeDetailPage: React.FC = () => {
   };
 
   const navigateToRelation = async (rel: AnimeRelation) => {
+    const titleStr = rel.title?.english || rel.title?.romaji || rel.title?.userPreferred || '';
+    
+    // 1. Resolve true AniList / MAL anime by title search
+    if (titleStr) {
+      try {
+        const searchResults = await AniListService.search(titleStr);
+        if (searchResults && searchResults.length > 0) {
+          const exact = searchResults.find((a: AnimeItem) => {
+            const t = (a.title?.english || a.title?.romaji || a.title?.userPreferred || '').toLowerCase();
+            return t === titleStr.toLowerCase();
+          }) || searchResults[0];
+
+          if (exact) {
+            await setSelectedAnime(exact);
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('Could not search relation anime:', e);
+      }
+    }
+
+    // 2. Fallback to direct relation object
     const targetAnime: any = {
       id: rel.id,
       malId: (rel as any).malId || rel.id,
