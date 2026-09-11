@@ -88,6 +88,134 @@ public class MainActivity extends BridgeActivity {
                 public void onReceivedSslError(WebView view, android.webkit.SslErrorHandler handler, android.net.http.SslError error) {
                     handler.proceed();
                 }
+
+                @Override
+                public android.webkit.WebResourceResponse shouldInterceptRequest(WebView view, android.webkit.WebResourceRequest request) {
+                    if (request == null || request.getUrl() == null) {
+                        return super.shouldInterceptRequest(view, request);
+                    }
+
+                    String urlString = request.getUrl().toString();
+                    String targetUrl = urlString;
+
+                    if (urlString.contains("_capacitor_http_interceptor_") && urlString.contains("u=")) {
+                        int uIdx = urlString.indexOf("u=");
+                        String raw = urlString.substring(uIdx + 2);
+                        int amp = raw.indexOf('&');
+                        if (amp != -1) raw = raw.substring(0, amp);
+                        try {
+                            targetUrl = java.net.URLDecoder.decode(raw, "UTF-8");
+                        } catch (Exception ignored) {}
+                    }
+
+                    boolean isStreamDomain = targetUrl.contains("krussdomi.com") ||
+                                            targetUrl.contains("advancedairesearchlab") ||
+                                            targetUrl.contains("habibikun") ||
+                                            targetUrl.contains("babybayw") ||
+                                            targetUrl.contains("narutokun") ||
+                                            targetUrl.contains("kaa.lt") ||
+                                            targetUrl.contains("megaplay.buzz") ||
+                                            targetUrl.contains(".m3u8") ||
+                                            targetUrl.contains(".ts") ||
+                                            targetUrl.contains(".vtt");
+
+                    boolean isMAL = targetUrl.contains("myanimelist.net");
+
+                    if (!isStreamDomain && !isMAL) {
+                        return super.shouldInterceptRequest(view, request);
+                    }
+
+                    // For POST or PATCH requests to APIs, do not intercept since WebResourceRequest does not supply the body stream
+                    String method = request.getMethod();
+                    if (!"GET".equalsIgnoreCase(method) && !"HEAD".equalsIgnoreCase(method) && !"OPTIONS".equalsIgnoreCase(method)) {
+                        return super.shouldInterceptRequest(view, request);
+                    }
+
+                    boolean isOptions = "OPTIONS".equalsIgnoreCase(method);
+                    java.util.Map<String, String> responseHeaders = new java.util.HashMap<>();
+                    responseHeaders.put("Access-Control-Allow-Origin", "*");
+                    responseHeaders.put("Access-Control-Allow-Methods", "GET, POST, HEAD, OPTIONS");
+                    responseHeaders.put("Access-Control-Allow-Headers", "*");
+                    responseHeaders.put("Access-Control-Allow-Credentials", "true");
+
+                    if (isOptions) {
+                        return new android.webkit.WebResourceResponse("application/json", "UTF-8", 200, "OK", responseHeaders, new java.io.ByteArrayInputStream(new byte[0]));
+                    }
+
+                    java.net.HttpURLConnection conn = null;
+                    try {
+                        java.net.URL url = new java.net.URL(targetUrl);
+                        conn = (java.net.HttpURLConnection) url.openConnection();
+                        conn.setRequestMethod(request.getMethod());
+                        conn.setConnectTimeout(12000);
+                        conn.setReadTimeout(12000);
+                        conn.setInstanceFollowRedirects(true);
+
+                        conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
+                        if (targetUrl.contains("krussdomi.com") || targetUrl.contains("advancedairesearchlab") || targetUrl.contains("habibikun") || targetUrl.contains("babybayw") || targetUrl.contains("narutokun")) {
+                            conn.setRequestProperty("Referer", "https://krussdomi.com/");
+                            conn.setRequestProperty("Origin", "https://krussdomi.com");
+                        } else if (targetUrl.contains("kaa.lt")) {
+                            conn.setRequestProperty("Referer", "https://kaa.lt/");
+                            conn.setRequestProperty("Origin", "https://kaa.lt");
+                        } else if (targetUrl.contains("megaplay.buzz")) {
+                            conn.setRequestProperty("Referer", "https://megaplay.buzz/");
+                            conn.setRequestProperty("Origin", "https://megaplay.buzz");
+                        }
+
+                        for (java.util.Map.Entry<String, String> entry : request.getRequestHeaders().entrySet()) {
+                            String k = entry.getKey();
+                            if (!k.equalsIgnoreCase("Referer") && !k.equalsIgnoreCase("Origin") && !k.equalsIgnoreCase("User-Agent")) {
+                                conn.setRequestProperty(k, entry.getValue());
+                            }
+                        }
+
+                        int statusCode = conn.getResponseCode();
+                        String reasonPhrase = conn.getResponseMessage();
+                        if (reasonPhrase == null || reasonPhrase.isEmpty()) reasonPhrase = "OK";
+                        String mimeType = conn.getContentType();
+                        String encoding = conn.getContentEncoding();
+                        if (mimeType == null) {
+                            if (urlString.contains(".m3u8")) mimeType = "application/vnd.apple.mpegurl";
+                            else if (urlString.contains(".ts")) mimeType = "video/mp2t";
+                            else mimeType = "application/octet-stream";
+                        }
+
+                        java.io.InputStream responseStream;
+                        if (statusCode >= 200 && statusCode < 400) {
+                            responseStream = conn.getInputStream();
+                        } else {
+                            responseStream = conn.getErrorStream();
+                            if (responseStream == null) {
+                                responseStream = new java.io.ByteArrayInputStream(new byte[0]);
+                            }
+                        }
+
+                        java.util.Map<String, java.util.List<String>> headerFields = conn.getHeaderFields();
+                        if (headerFields != null) {
+                            for (java.util.Map.Entry<String, java.util.List<String>> entry : headerFields.entrySet()) {
+                                if (entry.getKey() != null && !entry.getKey().equalsIgnoreCase("Access-Control-Allow-Origin")) {
+                                    responseHeaders.put(entry.getKey(), String.join(", ", entry.getValue()));
+                                }
+                            }
+                        }
+
+                        return new android.webkit.WebResourceResponse(
+                            mimeType,
+                            encoding != null ? encoding : "UTF-8",
+                            statusCode,
+                            reasonPhrase,
+                            responseHeaders,
+                            responseStream
+                        );
+                    } catch (Exception e) {
+                        Log.e(TAG, "Native request interception error for " + urlString, e);
+                        if (conn != null) {
+                            try { conn.disconnect(); } catch (Exception ignored) {}
+                        }
+                        return super.shouldInterceptRequest(view, request);
+                    }
+                }
             });
 
             webView.addJavascriptInterface(new OrientationBridge(), "AndroidOrientationBridge");
@@ -137,6 +265,7 @@ public class MainActivity extends BridgeActivity {
             runOnUiThread(() -> {
                 getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                 setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+                hideSystemUI();
             });
         }
 
@@ -145,6 +274,7 @@ public class MainActivity extends BridgeActivity {
             runOnUiThread(() -> {
                 getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                 setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+                showSystemUI();
             });
         }
 
@@ -153,6 +283,7 @@ public class MainActivity extends BridgeActivity {
             runOnUiThread(() -> {
                 getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                 setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+                showSystemUI();
             });
         }
     }
@@ -319,6 +450,17 @@ public class MainActivity extends BridgeActivity {
             }
         } catch (Exception e) {
             Log.e(TAG, "Error hiding system UI", e);
+        }
+    }
+
+    private void showSystemUI() {
+        try {
+            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(getWindow(), true);
+            androidx.core.view.WindowInsetsControllerCompat controller =
+                new androidx.core.view.WindowInsetsControllerCompat(getWindow(), getWindow().getDecorView());
+            controller.show(androidx.core.view.WindowInsetsCompat.Type.systemBars());
+        } catch (Exception e) {
+            Log.e(TAG, "Error showing system UI", e);
         }
     }
 

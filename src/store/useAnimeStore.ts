@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { AnimeItem } from '../types/anime';
-import { AniListService, FEATURED_BILLBOARD_ANIME } from '../services/anilist';
+import { AniListService } from '../services/anilist';
 
 interface AnimeState {
   // Navigation
@@ -64,7 +64,7 @@ export const useAnimeStore = create<AnimeState>((set, get) => ({
   activeNavTab: 'home',
   setActiveNavTab: (tab) => set({ activeNavTab: tab }),
 
-  featuredBillboard: FEATURED_BILLBOARD_ANIME,
+  featuredBillboard: [],
   currentBillboardIndex: 0,
   newEpisodesList: [],
   trendingList: [],
@@ -96,7 +96,7 @@ export const useAnimeStore = create<AnimeState>((set, get) => ({
         AniListService.getSeasonal('WINTER', 2024, 1, 24),
       ]);
 
-      const liveBillboard = trending.length >= 5 ? trending.slice(0, 5) : FEATURED_BILLBOARD_ANIME;
+      const liveBillboard = trending.length >= 5 ? trending.slice(0, 5) : trending;
 
       set({
         featuredBillboard: liveBillboard,

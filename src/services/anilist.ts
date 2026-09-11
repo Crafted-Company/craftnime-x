@@ -149,7 +149,7 @@ export class AniListService {
       console.warn('Kitsu getTrending fallback failed:', kErr);
     }
 
-    return MASTER_CURATED_CATALOG;
+    return [];
   }
 
   static async getNewEpisodes(_page = 1, perPage = 24): Promise<AnimeItem[]> {
@@ -194,7 +194,7 @@ export class AniListService {
       console.warn('Kitsu getNewEpisodes fallback failed:', kErr);
     }
 
-    return MASTER_CURATED_CATALOG.filter((a) => a.status === 'RELEASING' || !a.status);
+    return [];
   }
 
   static async getTopAiring(page = 1, perPage = 20): Promise<AnimeItem[]> {
@@ -228,7 +228,7 @@ export class AniListService {
       }
     } catch (kErr) {}
 
-    return MASTER_CURATED_CATALOG.slice(0, 15);
+    return [];
   }
 
   static async getSeasonal(
@@ -267,7 +267,7 @@ export class AniListService {
       }
     } catch (kErr) {}
 
-    return MASTER_CURATED_CATALOG;
+    return [];
   }
 
   static async browseCatalog(
@@ -277,26 +277,24 @@ export class AniListService {
   ): Promise<AnimeItem[]> {
     const query = `
       query (
-        $page: Int,
-        $perPage: Int,
-        $search: String,
-        $genre: String,
-        $season: MediaSeason,
-        $seasonYear: Int,
-        $format: MediaFormat,
-        $status: MediaStatus,
+        $page: Int
+        $perPage: Int
+        $search: String
+        $genre: String
+        $season: MediaSeason
+        $seasonYear: Int
+        $format: MediaFormat
         $sort: [MediaSort]
       ) {
         Page(page: $page, perPage: $perPage) {
           media(
-            search: $search,
-            genre: $genre,
-            season: $season,
-            seasonYear: $seasonYear,
-            format: $format,
-            status: $status,
-            sort: $sort,
-            type: ANIME,
+            search: $search
+            genre: $genre
+            season: $season
+            seasonYear: $seasonYear
+            format: $format
+            sort: $sort
+            type: ANIME
             isAdult: false
           ) {
             ${GRAPHQL_FIELDS}
@@ -305,14 +303,13 @@ export class AniListService {
       }
     `;
 
-    const variables: any = { page, perPage };
+    const variables: Record<string, any> = { page, perPage };
     if (filters.search) variables.search = filters.search;
     if (filters.genre && filters.genre !== 'All') variables.genre = filters.genre;
     if (filters.season) variables.season = filters.season;
     if (filters.seasonYear) variables.seasonYear = filters.seasonYear;
     if (filters.format && filters.format !== 'ALL') variables.format = filters.format;
-    if (filters.status) variables.status = filters.status;
-    variables.sort = filters.sort ? [filters.sort] : ['POPULARITY_DESC'];
+    if (filters.sort) variables.sort = [filters.sort];
 
     try {
       const res = await axios.post(
@@ -325,7 +322,7 @@ export class AniListService {
         return media.map(this.transformMedia);
       }
     } catch (e) {
-      console.warn('AniList browseCatalog failed, attempting Kitsu fallback...');
+      console.warn('AniList browse failed, attempting Kitsu fallback...');
     }
 
     try {
@@ -338,18 +335,7 @@ export class AniListService {
       }
     } catch (kErr) {}
 
-    let list = [...MASTER_CURATED_CATALOG];
-    if (filters.search) {
-      const q = filters.search.toLowerCase();
-      list = list.filter((a) => {
-        const titleStr = typeof a.title === 'object' ? `${a.title.english} ${a.title.romaji}` : String(a.title);
-        return titleStr.toLowerCase().includes(q);
-      });
-    }
-    if (filters.genre && filters.genre !== 'All') {
-      list = list.filter((a) => a.genres?.some((g) => g.toLowerCase() === filters.genre?.toLowerCase()));
-    }
-    return list;
+    return [];
   }
 
   static async getAnimeDetails(id: number, fallbackAnime?: AnimeItem | null): Promise<AnimeItem | null> {
@@ -414,22 +400,6 @@ export class AniListService {
       console.warn(`Failed to fetch details for anime id ${id}`, e);
     }
 
-    // 2. Strict ID match in Curated Catalog
-    const matched = MASTER_CURATED_CATALOG.find((a) => a.id === id || (a.malId && a.malId === id));
-    if (matched) {
-      if (!matched.relations || matched.relations.length === 0) {
-        const title = matched.title?.english || matched.title?.romaji || '';
-        try {
-          const kitsuRels = await KitsuService.getRelationsForAnime(title);
-          if (kitsuRels && kitsuRels.length > 0) {
-            return { ...matched, relations: kitsuRels };
-          }
-        } catch {}
-      }
-      return matched;
-    }
-
-    // 3. If fallbackAnime provided, enrich with Kitsu franchise relations
     if (fallbackAnime) {
       const title = fallbackAnime.title?.english || fallbackAnime.title?.romaji || '';
       try {

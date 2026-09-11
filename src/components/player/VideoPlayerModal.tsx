@@ -30,6 +30,7 @@ import { useSettingsStore } from '../../store/useSettingsStore';
 import { AnimeStreamService } from '../../services/animeStream';
 import { StremioAddonService, StremioStream } from '../../services/stremioAddon';
 import { SubtitleService, SubtitleCue } from '../../services/subtitleService';
+import { ScreenOrientation } from '@capacitor/screen-orientation';
 
 export const VideoPlayerModal: React.FC = () => {
   const {
@@ -73,6 +74,16 @@ export const VideoPlayerModal: React.FC = () => {
 
   // Stream URLs
   const [directStreamUrl, setDirectStreamUrl] = useState<string | null>(null);
+  const isIframeStream = Boolean(
+    directStreamUrl &&
+      (directStreamUrl.includes("embed") ||
+        directStreamUrl.includes("vidsrc") ||
+        directStreamUrl.includes("2embed") ||
+        directStreamUrl.includes("vidlink") ||
+        directStreamUrl.includes("autoembed")) &&
+      !directStreamUrl.includes(".m3u8") &&
+      !directStreamUrl.includes(".mp4")
+  );
   const [isLoadingStream, setIsLoadingStream] = useState(true);
   const [isBuffering, setIsBuffering] = useState(false);
   const [loadingStatusText, setLoadingStatusText] = useState('Connecting to stream source...');
@@ -182,15 +193,23 @@ export const VideoPlayerModal: React.FC = () => {
     }
   }, [isPlaying]);
 
-  // Device orientation: Follow user's orientation, lock landscape on fullscreen only
+  // Device orientation: Force strict landscape mode when player is open, restore portrait on exit
   useEffect(() => {
     if (isPlayerOpen) {
       try {
-        if ((window as any).AndroidOrientationBridge?.setUnspecified) {
-          (window as any).AndroidOrientationBridge.setUnspecified();
+        ScreenOrientation.lock({ orientation: 'landscape' }).catch(() => {});
+      } catch {}
+      try {
+        if ((window as any).AndroidOrientationBridge?.setLandscape) {
+          (window as any).AndroidOrientationBridge.setLandscape();
+        } else if (screen.orientation && (screen.orientation as any).lock) {
+          (screen.orientation as any).lock('landscape').catch(() => {});
         }
       } catch {}
     } else {
+      try {
+        ScreenOrientation.unlock().catch(() => {});
+      } catch {}
       try {
         if ((window as any).AndroidOrientationBridge?.setPortrait) {
           (window as any).AndroidOrientationBridge.setPortrait();
@@ -402,12 +421,27 @@ export const VideoPlayerModal: React.FC = () => {
     };
   }, [activeAnime?.id, activeEpisode?.number, audioTrack, isPlayerOpen, selectedTorrent]);
 
+  // Watchdog: Clear isBuffering if it stays stuck for > 5 seconds
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (isBuffering) {
+      timer = setTimeout(() => {
+        setIsBuffering(false);
+      }, 5000);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [isBuffering]);
+
   // Stream Attachment (HLS vs Direct P2P/MP4)
   useEffect(() => {
     if (!directStreamUrl || !videoRef.current) return;
 
     const video = videoRef.current;
     video.currentTime = 0;
+    video.muted = false;
+    video.volume = volume;
 
     const isHlsStream = directStreamUrl.includes('.m3u8');
 
@@ -432,14 +466,24 @@ export const VideoPlayerModal: React.FC = () => {
         hlsRef.current = hls;
 
         hls.on(Hls.Events.ERROR, (_event, data) => {
-          console.warn("[Player] HLS Event Error:", data);
-          if (data.fatal) {
-            console.log("[Player] Switching to native video source for direct playback");
-            if (videoRef.current) {
-              videoRef.current.src = directStreamUrl;
-              videoRef.current.currentTime = 0;
-              videoRef.current.play().catch(() => {});
-            }
+          if (!data.fatal) return;
+          console.warn("[Player] Fatal HLS error encountered:", data.type, data.details);
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              console.warn('[Player] Attempting network recovery...');
+              hls.startLoad();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              console.warn('[Player] Attempting media error recovery...');
+              hls.recoverMediaError();
+              break;
+            default:
+              console.error('[Player] Unrecoverable error, switching to native fallback');
+              if (videoRef.current) {
+                videoRef.current.src = directStreamUrl;
+                videoRef.current.play().catch(() => {});
+              }
+              break;
           }
         });
 
@@ -621,16 +665,23 @@ export const VideoPlayerModal: React.FC = () => {
   const seekRelative = (seconds: number) => {
     if (!videoRef.current) return;
     const maxDur = durationState > 0 ? durationState : (videoRef.current.duration || 1440);
-    const target = Math.max(0, Math.min(maxDur, currentTimeState + seconds));
+    const target = Math.max(0.1, Math.min(maxDur, currentTimeState + seconds));
     setCurrentTimeState(target);
     videoRef.current.currentTime = target;
+    if (isPlaying) {
+      videoRef.current.play().catch(() => {});
+    }
   };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const target = parseFloat(e.target.value);
+    const raw = parseFloat(e.target.value);
+    const target = Math.max(0.1, raw);
     setCurrentTimeState(target);
     if (videoRef.current) {
       videoRef.current.currentTime = target;
+      if (isPlaying) {
+        videoRef.current.play().catch(() => {});
+      }
     }
   };
 
@@ -683,13 +734,16 @@ export const VideoPlayerModal: React.FC = () => {
     >
       {/* Video Container & Touch Zones */}
       <div className="relative w-full h-full bg-black flex items-center justify-center overflow-hidden">
-        {directStreamUrl && (directStreamUrl.includes("embed") || directStreamUrl.includes("vidsrc") || directStreamUrl.includes("2embed") || directStreamUrl.includes("vidlink")) ? (
+        {isIframeStream ? (
           <iframe
-            src={directStreamUrl}
+            src={directStreamUrl!}
             allowFullScreen
             allow="autoplay; fullscreen; encrypted-media; picture-in-picture; accelerometer; gyroscope"
             className="w-full h-full border-0 z-10 bg-black"
-            onLoad={() => setIsLoadingStream(false)}
+            onLoad={() => {
+              setIsLoadingStream(false);
+              setStreamError(null);
+            }}
           />
         ) : (
           <video
@@ -732,6 +786,17 @@ export const VideoPlayerModal: React.FC = () => {
             }}
             onPlay={() => setPlaying(true)}
             onPause={() => setPlaying(false)}
+            onError={(e) => {
+              console.warn('[Player] Native video error event:', e);
+              setIsBuffering(false);
+              setIsLoadingStream(false);
+              if (activeAnime && !isIframeStream) {
+                const fallbackUrl = activeAnime.malId
+                  ? `https://vidlink.pro/anime/mal/${activeAnime.malId}/${activeEpisode?.number || 1}`
+                  : `https://vidsrc.cc/v2/embed/anime/mal/${activeAnime.id}/${activeEpisode?.number || 1}`;
+                setDirectStreamUrl(fallbackUrl);
+              }
+            }}
             className="w-full h-full object-contain pointer-events-none block bg-black"
             playsInline
             autoPlay
@@ -739,43 +804,44 @@ export const VideoPlayerModal: React.FC = () => {
           />
         )}
 
-        {/* 3-Zone Touch & Double-Tap Seeking Layer */}
-        <div className="absolute inset-0 z-10 flex">
-          {/* Left Zone: 30% width -> Double Tap: -seekStep */}
-          <div
-            onClick={(e) => {
-              e.stopPropagation();
-              handleZoneClick('left');
-            }}
-            className="w-[30%] h-full cursor-pointer relative"
-          >
-            {doubleTapFeedback === 'left' && (
-              <div className="absolute inset-0 flex items-center justify-center bg-white/10 rounded-r-full animate-in fade-in zoom-in duration-200">
-                <div className="flex flex-col items-center gap-1 text-white">
-                  <RotateCcw className="w-10 h-10 animate-spin" />
-                  <span className="font-mono text-xs font-bold bg-black/75 px-2.5 py-1 rounded-md border border-white/20">-{seekStep}s</span>
+        {/* 3-Zone Touch & Double-Tap Seeking Layer (Only for native video playback) */}
+        {!isIframeStream && (
+          <div className="absolute inset-0 z-10 flex">
+            {/* Left Zone: 30% width -> Double Tap: -seekStep */}
+            <div
+              onClick={(e) => {
+                e.stopPropagation();
+                handleZoneClick('left');
+              }}
+              className="w-[30%] h-full cursor-pointer relative"
+            >
+              {doubleTapFeedback === 'left' && (
+                <div className="absolute inset-0 flex items-center justify-center bg-white/10 rounded-r-full animate-in fade-in zoom-in duration-200">
+                  <div className="flex flex-col items-center gap-1 text-white">
+                    <RotateCcw className="w-10 h-10 animate-spin" />
+                    <span className="font-mono text-xs font-bold bg-black/75 px-2.5 py-1 rounded-md border border-white/20">-{seekStep}s</span>
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
 
-          {/* Center Zone: 40% width -> Single Tap: Toggle HUD */}
-          <div
-            onClick={(e) => {
-              e.stopPropagation();
-              handleZoneClick('center');
-            }}
-            className="w-[40%] h-full cursor-pointer"
-          />
+            {/* Center Zone: 40% width -> Single Tap: Toggle HUD */}
+            <div
+              onClick={(e) => {
+                e.stopPropagation();
+                handleZoneClick('center');
+              }}
+              className="w-[40%] h-full cursor-pointer"
+            />
 
-          {/* Right Zone: 30% width -> Double Tap: +seekStep */}
-          <div
-            onClick={(e) => {
-              e.stopPropagation();
-              handleZoneClick('right');
-            }}
-            className="w-[30%] h-full cursor-pointer relative"
-          >
+            {/* Right Zone: 30% width -> Double Tap: +seekStep */}
+            <div
+              onClick={(e) => {
+                e.stopPropagation();
+                handleZoneClick('right');
+              }}
+              className="w-[30%] h-full cursor-pointer relative"
+            >
             {doubleTapFeedback === 'right' && (
               <div className="absolute inset-0 flex items-center justify-center bg-white/10 rounded-l-full animate-in fade-in zoom-in duration-200">
                 <div className="flex flex-col items-center gap-1 text-white">
@@ -786,55 +852,58 @@ export const VideoPlayerModal: React.FC = () => {
             )}
           </div>
         </div>
+        )}
 
         {/* Netflix-Style Center Floating Quick Controls (Mobile & Desktop) */}
-        <div
-          className={`absolute inset-0 pointer-events-none z-20 flex items-center justify-center gap-8 sm:gap-14 transition-opacity duration-300 ${
-            showControls && !isLoadingStream && !streamError ? 'opacity-100' : 'opacity-0'
-          }`}
-        >
-          {/* Rewind seekStep */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              seekRelative(-seekStep);
-              resetControlsTimeout();
-            }}
-            className="p-3.5 sm:p-4 rounded-full bg-black/40 hover:bg-black/70 backdrop-blur-xl text-white border border-white/20 shadow-2xl hover:scale-110 active:scale-95 transition-all pointer-events-auto cursor-pointer"
-            title={`Rewind ${seekStep} seconds`}
+        {!isIframeStream && (
+          <div
+            className={`absolute inset-0 pointer-events-none z-20 flex items-center justify-center gap-8 sm:gap-14 transition-opacity duration-300 ${
+              showControls && !isLoadingStream && !streamError ? 'opacity-100' : 'opacity-0'
+            }`}
           >
-            <RotateCcw className="w-6 h-6 sm:w-7 sm:h-7" />
-          </button>
+            {/* Rewind seekStep */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                seekRelative(-seekStep);
+                resetControlsTimeout();
+              }}
+              className="p-3.5 sm:p-4 rounded-full bg-black/40 hover:bg-black/70 backdrop-blur-xl text-white border border-white/20 shadow-2xl hover:scale-110 active:scale-95 transition-all pointer-events-auto cursor-pointer"
+              title={`Rewind ${seekStep} seconds`}
+            >
+              <RotateCcw className="w-6 h-6 sm:w-7 sm:h-7" />
+            </button>
 
-          {/* Center Large Play / Pause Button - Sleek Translucent Frosted Glass */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              togglePlay();
-            }}
-            className="p-5 sm:p-6 rounded-full bg-black/45 hover:bg-black/75 backdrop-blur-xl text-white border border-white/25 shadow-2xl hover:scale-110 active:scale-95 transition-all pointer-events-auto cursor-pointer"
-            title={isPlaying ? 'Pause' : 'Play'}
-          >
-            {isPlaying ? (
-              <Pause className="w-8 h-8 sm:w-10 sm:h-10 fill-white" />
-            ) : (
-              <Play className="w-8 h-8 sm:w-10 sm:h-10 fill-white translate-x-0.5" />
-            )}
-          </button>
+            {/* Center Large Play / Pause Button - Sleek Translucent Frosted Glass */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                togglePlay();
+              }}
+              className="p-5 sm:p-6 rounded-full bg-black/45 hover:bg-black/75 backdrop-blur-xl text-white border border-white/25 shadow-2xl hover:scale-110 active:scale-95 transition-all pointer-events-auto cursor-pointer"
+              title={isPlaying ? 'Pause' : 'Play'}
+            >
+              {isPlaying ? (
+                <Pause className="w-8 h-8 sm:w-10 sm:h-10 fill-white" />
+              ) : (
+                <Play className="w-8 h-8 sm:w-10 sm:h-10 fill-white translate-x-0.5" />
+              )}
+            </button>
 
-          {/* Forward seekStep */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              seekRelative(seekStep);
-              resetControlsTimeout();
-            }}
-            className="p-3.5 sm:p-4 rounded-full bg-black/40 hover:bg-black/70 backdrop-blur-xl text-white border border-white/20 shadow-2xl hover:scale-110 active:scale-95 transition-all pointer-events-auto cursor-pointer"
-            title={`Forward ${seekStep} seconds`}
-          >
-            <RotateCw className="w-6 h-6 sm:w-7 sm:h-7" />
-          </button>
-        </div>
+            {/* Forward seekStep */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                seekRelative(seekStep);
+                resetControlsTimeout();
+              }}
+              className="p-3.5 sm:p-4 rounded-full bg-black/40 hover:bg-black/70 backdrop-blur-xl text-white border border-white/20 shadow-2xl hover:scale-110 active:scale-95 transition-all pointer-events-auto cursor-pointer"
+              title={`Forward ${seekStep} seconds`}
+            >
+              <RotateCw className="w-6 h-6 sm:w-7 sm:h-7" />
+            </button>
+          </div>
+        )}
 
         {/* Stremio-Style Swarm & Buffer Monitor Loading Overlay */}
         {isLoadingStream && (
@@ -894,7 +963,7 @@ export const VideoPlayerModal: React.FC = () => {
         )}
 
         {/* In-Playback Buffering Pill */}
-        {isBuffering && !isLoadingStream && (
+        {isBuffering && !isLoadingStream && !isIframeStream && (
           <div className="absolute top-20 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-full bg-black/80 backdrop-blur-md border border-crafted-brand-rust/50 text-white font-mono text-xs flex items-center gap-2 shadow-2xl animate-pulse">
             <div className="w-3 h-3 border-2 border-crafted-brand-rust border-t-transparent rounded-full animate-spin" />
             <span>Buffering stream... {p2pStats && p2pStats.downloadSpeed > 0 ? `${(p2pStats.downloadSpeed / 1024 / 1024).toFixed(1)} MB/s` : ''}</span>
@@ -968,6 +1037,8 @@ export const VideoPlayerModal: React.FC = () => {
           </div>
         )}
       </div>
+
+
 
       {/* Top Header Overlay Bar */}
       <div

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { KaaStreamService } from './kaaStream';
 
 export interface StreamSource {
   url: string;
@@ -279,11 +280,25 @@ export class AnimeStreamService {
       ? `https://vidlink.pro/anime/mal/${malId}/${episodeNumber}`
       : `https://www.2embed.cc/embed/anime/${cleanTitle}/${episodeNumber}`;
 
-    // 1. Prioritize MegaPlay Direct Decrypted Stream (Dango Engine)
+    // 1. High-Performance KAA Provider (Direct multi-res master.m3u8 + Soft Subtitles from Dango Engine)
+    try {
+      const kaaResult = await KaaStreamService.resolveStream(animeTitle, episodeNumber, audioMode);
+      if (kaaResult && kaaResult.sources.length > 0) {
+        return kaaResult;
+      }
+    } catch (kErr) {
+      console.warn('[KAA Stream Fallback]:', kErr);
+    }
+
+    // 1.5 MegaPlay AES Decrypted Direct Stream
     if (malId) {
-      const megaPlayResult = await this.resolveMegaPlay(malId, episodeNumber, audioMode);
-      if (megaPlayResult && megaPlayResult.sources.length > 0) {
-        return megaPlayResult;
+      try {
+        const megaResult = await AnimeStreamService.resolveMegaPlay(malId, episodeNumber, audioMode);
+        if (megaResult && megaResult.sources.length > 0) {
+          return megaResult;
+        }
+      } catch (mErr) {
+        console.warn('[MegaPlay Stream Fallback]:', mErr);
       }
     }
 

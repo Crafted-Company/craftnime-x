@@ -164,18 +164,40 @@ public class LocalStreamProxy {
                 return;
             }
 
-            String rawUrl = path.substring(12);
-            int amp = rawUrl.indexOf('&');
-            if (amp != -1) rawUrl = rawUrl.substring(0, amp);
-            String targetUrl = URLDecoder.decode(rawUrl, "UTF-8");
+            String targetUrl = "";
+            String refererUrl = "https://krussdomi.com/";
+
+            if (path.contains("?")) {
+                String queryStr = path.substring(path.indexOf('?') + 1);
+                String[] queryPairs = queryStr.split("&");
+                for (String pair : queryPairs) {
+                    int eq = pair.indexOf('=');
+                    if (eq != -1) {
+                        String k = pair.substring(0, eq);
+                        String v = URLDecoder.decode(pair.substring(eq + 1), "UTF-8");
+                        if ("url".equals(k)) targetUrl = v;
+                        else if ("referer".equals(k)) refererUrl = v;
+                    }
+                }
+            }
+
+            if (targetUrl.isEmpty()) {
+                client.close();
+                return;
+            }
 
             URL url = new URL(targetUrl);
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
-            conn.setRequestProperty("Referer", "https://anidb.app/");
-            conn.setRequestProperty("Origin", "https://anidb.app");
-            conn.setConnectTimeout(8000);
-            conn.setReadTimeout(8000);
+            conn.setRequestProperty("Referer", refererUrl);
+            try {
+                URL rUrl = new URL(refererUrl);
+                conn.setRequestProperty("Origin", rUrl.getProtocol() + "://" + rUrl.getHost());
+            } catch (Exception ignored) {
+                conn.setRequestProperty("Origin", refererUrl);
+            }
+            conn.setConnectTimeout(9000);
+            conn.setReadTimeout(9000);
 
             int code = conn.getResponseCode();
             String contentType = conn.getContentType();
@@ -190,11 +212,28 @@ public class LocalStreamProxy {
                 StringBuilder sb = new StringBuilder();
                 String mLine;
                 String baseUrl = targetUrl.substring(0, targetUrl.lastIndexOf('/') + 1);
+                final String finalRef = refererUrl;
 
                 while ((mLine = reader.readLine()) != null) {
-                    if (!mLine.startsWith("#") && !mLine.trim().isEmpty()) {
-                        String fullItemUrl = mLine.startsWith("http") ? mLine : baseUrl + mLine;
-                        mLine = "http://127.0.0.1:" + PORT + "/stream?url=" + URLEncoder.encode(fullItemUrl, "UTF-8");
+                    String trimmed = mLine.trim();
+                    if (!trimmed.startsWith("#") && !trimmed.isEmpty()) {
+                        String fullItemUrl = trimmed.startsWith("http") ? trimmed : baseUrl + trimmed;
+                        mLine = "http://127.0.0.1:" + PORT + "/stream?url=" + URLEncoder.encode(fullItemUrl, "UTF-8") + "&referer=" + URLEncoder.encode(finalRef, "UTF-8");
+                    } else if (trimmed.startsWith("#") && trimmed.contains("URI=\"")) {
+                        int uriStart = mLine.indexOf("URI=\"");
+                        while (uriStart != -1) {
+                            int valStart = uriStart + 5;
+                            int valEnd = mLine.indexOf("\"", valStart);
+                            if (valEnd != -1) {
+                                String origUri = mLine.substring(valStart, valEnd);
+                                String fullItemUrl = origUri.startsWith("http") ? origUri : baseUrl + origUri;
+                                String proxiedUri = "http://127.0.0.1:" + PORT + "/stream?url=" + URLEncoder.encode(fullItemUrl, "UTF-8") + "&referer=" + URLEncoder.encode(finalRef, "UTF-8");
+                                mLine = mLine.substring(0, valStart) + proxiedUri + mLine.substring(valEnd);
+                                uriStart = mLine.indexOf("URI=\"", valStart + proxiedUri.length());
+                            } else {
+                                break;
+                            }
+                        }
                     }
                     sb.append(mLine).append("\n");
                 }
@@ -211,20 +250,22 @@ public class LocalStreamProxy {
                 out.flush();
             } else {
                 long len = conn.getContentLengthLong();
-                String header = "HTTP/1.1 " + code + " OK\r\n" +
+                String header = "HTTP/1.1 " + code + " " + (code < 400 ? "OK" : "Error") + "\r\n" +
                                 "Content-Type: " + contentType + "\r\n" +
                                 "Access-Control-Allow-Origin: *\r\n" +
                                 "Access-Control-Allow-Methods: GET, HEAD, OPTIONS\r\n" +
                                 (len > 0 ? ("Content-Length: " + len + "\r\n\r\n") : "\r\n");
                 out.write(header.getBytes("UTF-8"));
 
-                InputStream is = conn.getInputStream();
-                byte[] buffer = new byte[16384];
-                int read;
-                while ((read = is.read(buffer)) != -1) {
-                    out.write(buffer, 0, read);
+                InputStream is = (code >= 200 && code < 400) ? conn.getInputStream() : conn.getErrorStream();
+                if (is != null) {
+                    byte[] buffer = new byte[16384];
+                    int read;
+                    while ((read = is.read(buffer)) != -1) {
+                        out.write(buffer, 0, read);
+                    }
+                    is.close();
                 }
-                is.close();
                 out.flush();
             }
 
