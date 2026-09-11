@@ -4,6 +4,7 @@ import {
   Play,
   Plus,
   Check,
+  CheckCircle2,
   Star,
   Sparkles,
   Search,
@@ -11,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useAnimeStore } from '../../store/useAnimeStore';
 import { usePlayerStore } from '../../store/usePlayerStore';
+import { useWatchedStore } from '../../store/useWatchedStore';
 import { AniListService } from '../../services/anilist';
 import { Badge } from '../common/Badge';
 import { AnimeEpisode } from '../../types/anime';
@@ -21,6 +23,7 @@ export const AnimeDetailModal: React.FC = () => {
   const { selectedAnime, detailedAnimeInfo, setSelectedAnime, toggleWatchlist, isInWatchlist } =
     useAnimeStore();
   const { openPlayer } = usePlayerStore();
+  const { isEpisodeWatched, toggleWatchedEpisode, markSeasonWatched, unmarkSeasonWatched } = useWatchedStore();
 
   const [activeTab, setActiveTab] = useState<TabType>('episodes');
   const [episodeSearch, setEpisodeSearch] = useState('');
@@ -222,6 +225,25 @@ export const AnimeDetailModal: React.FC = () => {
           {/* TAB 1: EPISODE LIST VIEW */}
           {activeTab === 'episodes' && (
             <div className="space-y-4">
+              {/* Season Watched Progress Header */}
+              <div className="flex items-center justify-between gap-2 px-1">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => markSeasonWatched(anime.id, anime.episodes || episodes.length)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-mono font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition-all cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Mark All Watched</span>
+                  </button>
+                  <button
+                    onClick={() => unmarkSeasonWatched(anime.id, anime.episodes || episodes.length)}
+                    className="px-3 py-1.5 rounded-xl text-xs font-mono font-semibold bg-crafted-panel hover:bg-crafted-surface text-crafted-text-dim hover:text-white border border-crafted-border transition-all cursor-pointer"
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
+
               {/* Filter Controls Row */}
               <div className="flex items-center justify-between gap-3 flex-wrap bg-crafted-panel/60 p-3 rounded-xl border border-crafted-border">
                 {/* Search in episodes */}
@@ -312,66 +334,95 @@ export const AnimeDetailModal: React.FC = () => {
                     No episodes found matching "{episodeSearch}"
                   </p>
                 ) : (
-                  displayedEpisodes.map((ep) => (
-                    <div
-                      key={ep.id}
-                      onClick={() => {
-                        openPlayer(anime, ep);
-                        setSelectedAnime(null);
-                      }}
-                      className="group flex items-center justify-between gap-4 p-3 rounded-xl bg-crafted-panel/50 hover:bg-crafted-surface border border-crafted-border hover:border-crafted-brand-rust transition-all duration-200 cursor-pointer shadow-crafted-card"
-                    >
-                      {/* Left Thumbnail & Duration */}
-                      <div className="relative aspect-video w-28 sm:w-36 rounded-lg overflow-hidden shrink-0 bg-crafted-bg">
-                        <img
-                          src={ep.thumbnail || coverImg}
-                          alt=""
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                        />
-                        <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors" />
-                        <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 font-mono text-[10px] text-white">
-                          {ep.duration || '24m'}
-                        </span>
-                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                          <div className="w-8 h-8 rounded-full bg-crafted-brand-rust flex items-center justify-center text-white shadow-crafted-glow">
-                            <Play className="w-3.5 h-3.5 fill-white ml-0.5" />
+                  displayedEpisodes.map((ep) => {
+                    const watched = isEpisodeWatched(anime.id, ep.number);
+                    return (
+                      <div
+                        key={ep.id}
+                        onClick={() => {
+                          openPlayer(anime, ep);
+                          setSelectedAnime(null);
+                        }}
+                        className={`group flex items-center justify-between gap-4 p-3 rounded-xl border transition-all duration-200 cursor-pointer shadow-crafted-card ${
+                          watched
+                            ? 'bg-crafted-panel/30 border-emerald-500/30 hover:border-emerald-500/60'
+                            : 'bg-crafted-panel/50 hover:bg-crafted-surface border-crafted-border hover:border-crafted-brand-rust'
+                        }`}
+                      >
+                        {/* Left Thumbnail & Duration */}
+                        <div className="relative aspect-video w-28 sm:w-36 rounded-lg overflow-hidden shrink-0 bg-crafted-bg">
+                          <img
+                            src={ep.thumbnail || coverImg}
+                            alt=""
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                          />
+                          <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors" />
+                          <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 font-mono text-[10px] text-white">
+                            {ep.duration || '24m'}
+                          </span>
+                          {watched && (
+                            <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-emerald-500/90 text-white font-mono text-[10px] font-bold flex items-center gap-1 shadow-md">
+                              <CheckCircle2 className="w-3 h-3" />
+                              <span>WATCHED</span>
+                            </div>
+                          )}
+                          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="w-8 h-8 rounded-full bg-crafted-brand-rust flex items-center justify-center text-white shadow-crafted-glow">
+                              <Play className="w-3.5 h-3.5 fill-white ml-0.5" />
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      {/* Center Info */}
-                      <div className="flex-1 min-w-0 space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-crafted-brand-rust/25 text-crafted-brand-rustLight border border-crafted-brand-rust/40">
-                            EPISODE {ep.number}
-                          </span>
-                          {ep.airDate && (
-                            <span className="text-[11px] font-mono text-crafted-text-dim">
-                              {ep.airDate}
+                        {/* Center Info */}
+                        <div className="flex-1 min-w-0 space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-crafted-brand-rust/25 text-crafted-brand-rustLight border border-crafted-brand-rust/40">
+                              EPISODE {ep.number}
                             </span>
-                          )}
-                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300">
-                            {audioPreference.toUpperCase()}
-                          </span>
+                            {ep.airDate && (
+                              <span className="text-[11px] font-mono text-crafted-text-dim">
+                                {ep.airDate}
+                              </span>
+                            )}
+                            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300">
+                              {audioPreference.toUpperCase()}
+                            </span>
+                          </div>
+
+                          <h4 className="text-xs sm:text-sm font-semibold text-white truncate group-hover:text-crafted-brand-rustLight transition-colors">
+                            {(ep.title || `Episode ${ep.number}`).replace(/^Episode \d+:\s*/, '')}
+                          </h4>
+
+                          <p className="text-[11px] text-crafted-text-muted line-clamp-1">
+                            {ep.description || 'Watch full episode in 1080p stream.'}
+                          </p>
                         </div>
 
-                        <h4 className="text-xs sm:text-sm font-semibold text-white truncate group-hover:text-crafted-brand-rustLight transition-colors">
-                          {(ep.title || `Episode ${ep.number}`).replace(/^Episode \d+:\s*/, '')}
-                        </h4>
-
-                        <p className="text-[11px] text-crafted-text-muted line-clamp-1">
-                          {ep.description || 'Watch full episode in 1080p stream.'}
-                        </p>
+                        {/* Right Quick Play & Watched Toggle Button */}
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleWatchedEpisode(anime.id, ep.number, anime.episodes);
+                            }}
+                            className={`p-2 rounded-lg border transition-colors cursor-pointer ${
+                              watched
+                                ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                                : 'bg-crafted-surface text-crafted-text-dim border-crafted-border hover:text-white'
+                            }`}
+                            title={watched ? 'Mark as Unwatched' : 'Mark as Watched'}
+                          >
+                            <CheckCircle2 className="w-4 h-4" />
+                          </button>
+                          <button className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-crafted-surface group-hover:bg-crafted-brand-rust text-crafted-text group-hover:text-white border border-crafted-border text-xs font-semibold transition-colors shrink-0">
+                            <Play className="w-3 h-3 fill-current" />
+                            <span>Watch</span>
+                          </button>
+                        </div>
                       </div>
-
-                      {/* Right Quick Play Button */}
-                      <button className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-crafted-surface group-hover:bg-crafted-brand-rust text-crafted-text group-hover:text-white border border-crafted-border text-xs font-semibold transition-colors shrink-0">
-                        <Play className="w-3 h-3 fill-current" />
-                        <span>Watch</span>
-                      </button>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>

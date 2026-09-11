@@ -20,7 +20,7 @@ export const StreamSelectModal: React.FC<StreamSelectModalProps> = ({
 }) => {
   const [streams, setStreams] = useState<StremioStream[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [filter, setFilter] = useState<'seeders' | 'fastest' | '1080p' | 'dual'>('seeders');
+  const [filter, setFilter] = useState<'seeders' | 'fastest' | '4k' | '1080p' | '720p' | 'dual'>('seeders');
 
   const fetchStreams = async () => {
     if (!anime || !episode) return;
@@ -59,8 +59,12 @@ export const StreamSelectModal: React.FC<StreamSelectModalProps> = ({
       return list.sort((a, b) => scoreStream(b) - scoreStream(a));
     }
 
-    if (filter === '1080p') {
-      list = list.filter((s) => s.quality === '1080p');
+    if (filter === '4k') {
+      list = list.filter((s) => s.quality === '4K' || s.title.toLowerCase().includes('2160p') || s.title.toLowerCase().includes('4k'));
+    } else if (filter === '1080p') {
+      list = list.filter((s) => s.quality === '1080p' || s.title.toLowerCase().includes('1080p'));
+    } else if (filter === '720p') {
+      list = list.filter((s) => s.quality === '720p' || s.title.toLowerCase().includes('720p'));
     } else if (filter === 'dual') {
       list = list.filter((s) => s.audioInfo.includes('Dual') || s.audioInfo.includes('Dub') || s.title.toLowerCase().includes('dub'));
     }
@@ -134,6 +138,16 @@ export const StreamSelectModal: React.FC<StreamSelectModalProps> = ({
             ⚡ Fastest Single Ep
           </button>
           <button
+            onClick={() => setFilter('4k')}
+            className={`shrink-0 px-3.5 py-1.5 rounded-xl text-xs font-mono whitespace-nowrap transition-all cursor-pointer border ${
+              filter === '4k'
+                ? 'bg-crafted-brand-rust text-white border-crafted-brand-rust font-bold shadow-md'
+                : 'bg-crafted-panel text-crafted-text-dim border-crafted-border hover:text-white hover:border-white/20'
+            }`}
+          >
+            4K UHD
+          </button>
+          <button
             onClick={() => setFilter('1080p')}
             className={`shrink-0 px-3.5 py-1.5 rounded-xl text-xs font-mono whitespace-nowrap transition-all cursor-pointer border ${
               filter === '1080p'
@@ -142,6 +156,16 @@ export const StreamSelectModal: React.FC<StreamSelectModalProps> = ({
             }`}
           >
             1080p Master
+          </button>
+          <button
+            onClick={() => setFilter('720p')}
+            className={`shrink-0 px-3.5 py-1.5 rounded-xl text-xs font-mono whitespace-nowrap transition-all cursor-pointer border ${
+              filter === '720p'
+                ? 'bg-crafted-brand-rust text-white border-crafted-brand-rust font-bold shadow-md'
+                : 'bg-crafted-panel text-crafted-text-dim border-crafted-border hover:text-white hover:border-white/20'
+            }`}
+          >
+            720p HD
           </button>
           <button
             onClick={() => setFilter('dual')}

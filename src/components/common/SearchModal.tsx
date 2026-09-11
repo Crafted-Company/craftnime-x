@@ -100,6 +100,25 @@ export const SearchModal: React.FC = () => {
           ))}
         </div>
 
+        {/* Quick Search Suggestions Banner when query is empty */}
+        {!searchQuery && (
+          <div className="px-3 sm:px-4 py-2.5 bg-crafted-panel/40 border-b border-crafted-border/40 flex items-center gap-2 overflow-x-auto no-scrollbar">
+            <span className="text-[11px] font-mono text-crafted-text-dim uppercase shrink-0">Popular:</span>
+            {['Attack on Titan', 'Solo Leveling', 'Demon Slayer', 'Jujutsu Kaisen', 'One Piece', 'Bleach', 'Frieren', 'Chainsaw Man'].map((tag) => (
+              <button
+                key={tag}
+                onClick={() => {
+                  setSearchQuery(tag);
+                  searchAnime(tag, selectedGenre);
+                }}
+                className="px-2.5 py-0.5 rounded-md text-xs bg-crafted-surface hover:bg-crafted-brand-rust/20 text-crafted-text-muted hover:text-white border border-crafted-border hover:border-crafted-brand-rust/40 transition-all whitespace-nowrap cursor-pointer"
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Results Container */}
         <div className="flex-1 overflow-y-auto p-2 sm:p-4 space-y-2 sm:space-y-3">
           {isLoading ? (
@@ -108,9 +127,10 @@ export const SearchModal: React.FC = () => {
               <p className="text-sm font-mono">Querying AniList Catalog...</p>
             </div>
           ) : searchResults.length === 0 ? (
-            <div className="py-12 text-center text-crafted-text-dim">
-              <Film className="w-10 h-10 mx-auto mb-2 opacity-40" />
-              <p className="text-sm">No anime matches found for "{searchQuery}"</p>
+            <div className="py-12 text-center text-crafted-text-dim space-y-2">
+              <Film className="w-10 h-10 mx-auto opacity-40" />
+              <p className="text-sm">No anime matches found for "{searchQuery || selectedGenre}"</p>
+              <p className="text-xs text-crafted-text-dim">Try searching with a broader title or select another genre above.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-3">

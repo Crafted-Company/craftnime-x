@@ -4,6 +4,7 @@ import { AccountSyncService } from '../services/accountSync';
 interface WatchedState {
   // Map of `${animeId}-${episodeNumber}` -> boolean
   watchedMap: Record<string, boolean>;
+  markEpisodeWatched: (animeId: number, episodeNumber: number, malId?: number) => void;
   toggleWatchedEpisode: (animeId: number, episodeNumber: number, malId?: number) => void;
   markSeasonWatched: (animeId: number, totalEpisodes: number, malId?: number) => void;
   unmarkSeasonWatched: (animeId: number, totalEpisodes: number, malId?: number) => void;
@@ -26,6 +27,25 @@ const getInitialMap = (): Record<string, boolean> => {
 
 export const useWatchedStore = create<WatchedState>((set, get) => ({
   watchedMap: getInitialMap(),
+
+  markEpisodeWatched: (animeId: number, episodeNumber: number, malId?: number) => {
+    const key1 = `${animeId}-${episodeNumber}`;
+    const key2 = malId ? `${malId}-${episodeNumber}` : null;
+    const { watchedMap } = get();
+    if (watchedMap[key1] && (!key2 || watchedMap[key2])) return;
+
+    const updated = { ...watchedMap, [key1]: true };
+    if (key2) updated[key2] = true;
+
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updated));
+    set({ watchedMap: updated });
+
+    // Push live to MyAnimeList cloud
+    const targetMalId = malId || animeId;
+    if (targetMalId) {
+      AccountSyncService.updateMALProgress(targetMalId, episodeNumber, 'watching').catch(() => {});
+    }
+  },
 
   toggleWatchedEpisode: (animeId: number, episodeNumber: number, malId?: number) => {
     const key1 = `${animeId}-${episodeNumber}`;

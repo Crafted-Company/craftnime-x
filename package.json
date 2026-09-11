@@ -67,7 +67,8 @@
     ],
     "linux": {
       "target": [
-        "AppImage"
+        "zip",
+        "dir"
       ],
       "category": "AudioVideo",
       "icon": "public/Craftnime.png"

@@ -17,7 +17,6 @@ import {
   List,
   Sparkles,
   Tv,
-  CheckCircle2,
   Zap,
   Subtitles,
   Check,
@@ -50,7 +49,7 @@ export const VideoPlayerModal: React.FC = () => {
 
   const { recordWatchProgress } = useAnimeStore();
   const { user, isAutoScrobbleEnabled, scrobbleEpisode } = useMALStore();
-  const { isEpisodeWatched, toggleWatchedEpisode } = useWatchedStore();
+  const { isEpisodeWatched, markEpisodeWatched } = useWatchedStore();
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -65,12 +64,12 @@ export const VideoPlayerModal: React.FC = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const { seekStep, setSeekStep } = useSettingsStore();
   const lastRecordedTimeRef = useRef<number>(0);
+  const hasMarked80PercentRef = useRef<boolean>(false);
   const [showControls, setShowControls] = useState(true);
   const [showSettingsDrawer, setShowSettingsDrawer] = useState(false);
   const [showEpisodeDrawer, setShowEpisodeDrawer] = useState(false);
   const [availableQualities, setAvailableQualities] = useState<string[]>(['Auto', '1080p', '720p', '480p']);
-  const [selectedQuality, setSelectedQuality] = useState('Auto');
-  const [scrobbledNotice, setScrobbledNotice] = useState(false);
+  const [selectedQuality, setSelectedQuality] = useState('1080p');
 
   // Stream URLs
   const [directStreamUrl, setDirectStreamUrl] = useState<string | null>(null);
@@ -175,10 +174,10 @@ export const VideoPlayerModal: React.FC = () => {
   useEffect(() => {
     hasAutoSkippedIntroRef.current = false;
     hasAutoSkippedOutroRef.current = false;
+    hasMarked80PercentRef.current = false;
     lastTimeRef.current = 0;
     setCurrentTimeState(0);
     setDurationState(0);
-    setScrobbledNotice(false);
     setStreamError(null);
     setDirectStreamUrl(null);
     if (videoRef.current) {
@@ -193,17 +192,27 @@ export const VideoPlayerModal: React.FC = () => {
     }
   }, [isPlaying]);
 
-  // Device orientation: Force strict landscape mode when player is open, restore portrait on exit
+  // Device orientation & Fullscreen: Force sensor-landscape mode and auto-fullscreen when player is open
   useEffect(() => {
     if (isPlayerOpen) {
       try {
-        ScreenOrientation.lock({ orientation: 'landscape' }).catch(() => {});
+        ScreenOrientation.lock({ orientation: 'sensor-landscape' as any }).catch(() => {});
       } catch {}
       try {
         if ((window as any).AndroidOrientationBridge?.setLandscape) {
           (window as any).AndroidOrientationBridge.setLandscape();
         } else if (screen.orientation && (screen.orientation as any).lock) {
-          (screen.orientation as any).lock('landscape').catch(() => {});
+          (screen.orientation as any).lock('sensor-landscape').catch(() => {});
+        }
+      } catch {}
+
+      // Automatically request fullscreen mode on open
+      try {
+        const elem = containerRef.current || document.documentElement;
+        if (elem.requestFullscreen) {
+          elem.requestFullscreen().catch(() => {});
+        } else if ((elem as any).webkitRequestFullscreen) {
+          (elem as any).webkitRequestFullscreen();
         }
       } catch {}
     } else {
@@ -215,6 +224,15 @@ export const VideoPlayerModal: React.FC = () => {
           (window as any).AndroidOrientationBridge.setPortrait();
         } else if (screen.orientation && (screen.orientation as any).unlock) {
           (screen.orientation as any).unlock();
+        }
+      } catch {}
+
+      // Exit fullscreen
+      try {
+        if (document.fullscreenElement) {
+          document.exitFullscreen().catch(() => {});
+        } else if ((document as any).webkitFullscreenElement) {
+          (document as any).webkitExitFullscreen();
         }
       } catch {}
     }
@@ -491,6 +509,14 @@ export const VideoPlayerModal: React.FC = () => {
           const levels = hls.levels.map((l) => `${l.height}p`);
           if (levels.length > 0) {
             setAvailableQualities([...Array.from(new Set(levels)), 'Auto']);
+            // Pin to 1080p or highest available level so stream does not degrade to 360p/480p
+            const idx1080 = hls.levels.findIndex((l) => l.height === 1080);
+            const bestIdx = idx1080 !== -1 ? idx1080 : hls.levels.length - 1;
+            if (bestIdx >= 0) {
+              hls.currentLevel = bestIdx;
+              hls.loadLevel = bestIdx;
+              setSelectedQuality(hls.levels[bestIdx]?.height ? `${hls.levels[bestIdx].height}p` : '1080p');
+            }
           }
           video.currentTime = 0;
           video.play().catch(() => {});
@@ -580,13 +606,12 @@ export const VideoPlayerModal: React.FC = () => {
       }
     }
 
-    // Auto-Scrobble & Mark Watched at 80% (only if watched 80% of full episode)
+    // Mark Watched & Auto-Scrobble at 80% silently (reflects immediately on anime details page)
     if (activeAnime && activeEpisode && validDuration > 120) {
       const pct = (now / validDuration) * 100;
-      if (pct >= 80 && !scrobbledNotice) {
-        setScrobbledNotice(true);
-        setTimeout(() => setScrobbledNotice(false), 4000);
-        toggleWatchedEpisode(activeAnime.id, activeEpisode.number, activeAnime.episodes);
+      if (pct >= 80 && !hasMarked80PercentRef.current) {
+        hasMarked80PercentRef.current = true;
+        markEpisodeWatched(activeAnime.id, activeEpisode.number, activeAnime.malId || activeAnime.id);
         if (isAutoScrobbleEnabled && user.isLoggedIn) {
           scrobbleEpisode(
             activeAnime.title?.english || activeAnime.title?.romaji || 'Anime',
@@ -1000,13 +1025,6 @@ export const VideoPlayerModal: React.FC = () => {
           </div>
         )}
 
-        {/* 80% MAL Scrobbled Badge Notice */}
-        {scrobbledNotice && (
-          <div className="absolute top-20 right-8 z-30 px-4 py-2 rounded-xl bg-emerald-950/90 text-emerald-300 font-mono text-xs border border-emerald-500/40 shadow-2xl flex items-center gap-2 animate-in fade-in">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            <span>Watched & Scrobbled to MAL</span>
-          </div>
-        )}
 
         {/* High-Visibility Custom Subtitle Overlay (Stremio Standard - Instant Sync on Seek) */}
         {selectedSubtitleTrack !== 'off' && activeSubtitleCues.length > 0 && (

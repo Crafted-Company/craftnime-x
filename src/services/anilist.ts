@@ -270,6 +270,75 @@ export class AniListService {
     return [];
   }
 
+  static async search(queryStr: string, genre?: string, perPage = 25): Promise<AnimeItem[]> {
+    const trimmed = queryStr ? queryStr.trim() : '';
+    const query = `
+      query ($search: String, $genre: String, $perPage: Int) {
+        Page(page: 1, perPage: $perPage) {
+          media(search: $search, genre: $genre, sort: [POPULARITY_DESC, SCORE_DESC], type: ANIME, isAdult: false) {
+            ${GRAPHQL_FIELDS}
+          }
+        }
+      }
+    `;
+    const variables: Record<string, any> = { perPage };
+    if (trimmed) variables.search = trimmed;
+    if (genre && genre !== 'All') variables.genre = genre;
+
+    try {
+      const res = await axios.post(
+        ANILIST_GRAPHQL_URL,
+        { query, variables },
+        { timeout: 6000 }
+      );
+      const media = res.data?.data?.Page?.media;
+      if (media && media.length > 0) {
+        return media.map(this.transformMedia);
+      }
+    } catch (e) {
+      console.warn('AniList search query failed, attempting Kitsu fallback...', e);
+    }
+
+    try {
+      if (trimmed) {
+        const kitsuResults = await KitsuService.search(trimmed, perPage);
+        if (kitsuResults && kitsuResults.length > 0) return kitsuResults;
+      } else {
+        const kitsuTrending = await KitsuService.getTrending(perPage);
+        if (kitsuTrending && kitsuTrending.length > 0) return kitsuTrending;
+      }
+    } catch (kErr) {}
+
+    return [];
+  }
+
+  static async getByGenre(genre: string, perPage = 20): Promise<AnimeItem[]> {
+    const query = `
+      query ($genre: String, $perPage: Int) {
+        Page(page: 1, perPage: $perPage) {
+          media(genre: $genre, sort: POPULARITY_DESC, type: ANIME, isAdult: false) {
+            ${GRAPHQL_FIELDS}
+          }
+        }
+      }
+    `;
+    try {
+      const res = await axios.post(
+        ANILIST_GRAPHQL_URL,
+        { query, variables: { genre, perPage } },
+        { timeout: 6000 }
+      );
+      const media = res.data?.data?.Page?.media;
+      if (media && media.length > 0) {
+        return media.map(this.transformMedia);
+      }
+    } catch (e) {
+      console.warn(`AniList getByGenre (${genre}) failed:`, e);
+    }
+
+    return [];
+  }
+
   static async browseCatalog(
     filters: BrowseFilters,
     page = 1,
@@ -412,10 +481,6 @@ export class AniListService {
     }
 
     return null;
-  }
-
-  static async search(searchQuery: string, genre?: string, perPage = 20): Promise<AnimeItem[]> {
-    return this.browseCatalog({ search: searchQuery, genre }, 1, perPage);
   }
 
   static generateEpisodes(anime: AnimeItem, extraEpisodes: any[] = []): AnimeEpisode[] {

@@ -35,6 +35,7 @@ export const App: React.FC = () => {
     trendingList,
     topAiringList,
     popularSeasonList,
+    genreShelves,
     continueWatchingList,
     selectedGenre,
     setSelectedGenre,
@@ -153,6 +154,21 @@ export const App: React.FC = () => {
                 items={popularSeasonList}
                 variant="standard"
               />
+
+              {/* Netflix-Style Categorized Genre Shelves */}
+              {Object.entries(genreShelves).map(([genreTitle, items]) => {
+                if (!items || items.length === 0) return null;
+                return (
+                  <AnimeCarousel
+                    key={genreTitle}
+                    title={genreTitle}
+                    subtitle={`Curated top picks in ${genreTitle.split('&')[0].trim()}`}
+                    icon={<Sparkles className="w-5 h-5 text-crafted-brand-rust" />}
+                    items={items}
+                    variant="standard"
+                  />
+                );
+              })}
             </div>
           </>
         )}

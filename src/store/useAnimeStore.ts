@@ -14,6 +14,7 @@ interface AnimeState {
   trendingList: AnimeItem[];
   topAiringList: AnimeItem[];
   popularSeasonList: AnimeItem[];
+  genreShelves: Record<string, AnimeItem[]>;
   continueWatchingList: AnimeItem[];
   watchlist: AnimeItem[];
   selectedAnime: AnimeItem | null;
@@ -33,6 +34,7 @@ interface AnimeState {
 
   // Actions
   fetchInitialCatalog: () => Promise<void>;
+  fetchGenreShelves: () => Promise<void>;
   setCurrentBillboardIndex: (index: number) => void;
   nextBillboard: () => void;
   prevBillboard: () => void;
@@ -70,6 +72,7 @@ export const useAnimeStore = create<AnimeState>((set, get) => ({
   trendingList: [],
   topAiringList: [],
   popularSeasonList: [],
+  genreShelves: {},
   continueWatchingList: JSON.parse(localStorage.getItem(LOCAL_STORAGE_CONTINUE_KEY) || '[]'),
   watchlist: JSON.parse(localStorage.getItem(LOCAL_STORAGE_WATCHLIST_KEY) || '[]'),
   selectedAnime: null,
@@ -85,6 +88,34 @@ export const useAnimeStore = create<AnimeState>((set, get) => ({
   searchResults: [],
   isLoading: false,
   isSearchModalOpen: false,
+
+  fetchGenreShelves: async () => {
+    try {
+      const [action, horror, fantasy, psychological, sciFi, romance, comedy] = await Promise.all([
+        AniListService.getByGenre('Action', 18),
+        AniListService.getByGenre('Horror', 18),
+        AniListService.getByGenre('Fantasy', 18),
+        AniListService.getByGenre('Psychological', 18),
+        AniListService.getByGenre('Sci-Fi', 18),
+        AniListService.getByGenre('Romance', 18),
+        AniListService.getByGenre('Comedy', 18),
+      ]);
+
+      set({
+        genreShelves: {
+          'Action & High-Octane Battles': action,
+          'Horror & Dark Supernatural': horror,
+          'Fantasy & Magic Realms': fantasy,
+          'Psychological & Mind Games': psychological,
+          'Sci-Fi & Cyberpunk': sciFi,
+          'Romance & Heartfelt Drama': romance,
+          'Slice of Life & Comedy': comedy,
+        },
+      });
+    } catch (err) {
+      console.warn('Failed to fetch genre shelves', err);
+    }
+  },
 
   fetchInitialCatalog: async () => {
     set({ isLoading: true });
@@ -108,6 +139,9 @@ export const useAnimeStore = create<AnimeState>((set, get) => ({
         searchResults: trending,
         isLoading: false,
       });
+
+      // Fetch genre shelves asynchronously in parallel
+      get().fetchGenreShelves();
     } catch (e) {
       console.error('Failed to load initial catalog', e);
       set({ isLoading: false });
